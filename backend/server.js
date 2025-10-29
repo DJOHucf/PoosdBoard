@@ -5,6 +5,7 @@ const bodyParser = require('body-parser');
 const cors = require('cors');
 const MongoClient = require('mongodb').MongoClient;
 const WebSocket = require('ws');
+const jwt = require('jsonwebtoken');
 
 // Enviroment variables
 require('dotenv').config();
@@ -85,6 +86,10 @@ app.post('/api/login', async (req, res, next) => {
         n = results[0].name;
     }
     else error = 'Invalid user/pass';
+
+    // testing
+    const token = jwt.sign({id}, JWT_SECRET, {expiresIn: '1h'});
+    res.status(200).json({token});
 
     var ret = {id: id, name: n, error:''};
     res.status(200).json(ret);
