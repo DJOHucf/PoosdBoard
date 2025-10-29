@@ -6,6 +6,7 @@ const cors = require('cors');
 const MongoClient = require('mongodb').MongoClient;
 const WebSocket = require('ws');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 
 // Enviroment variables
 require('dotenv').config();
@@ -53,7 +54,9 @@ app.listen(5000);
 // Signup 
 app.post('/api/signup', async (req, res, next) => {
     const { email, password, name } = req.body;
-    const newUser = {email: email, passwordHash: password, name: name, createdAt: new Date(), emailVerified: true};
+    // changed password -> hashedPassword
+    const hashedPassword = crypto.createHash('sha256').update(password).digest('hex');
+    const newUser = {email: email, passwordHash: hashedPassword, name: name, createdAt: new Date(), emailVerified: true};
     var error = '';
     try {
         const result = await db.collection('users').insertOne(newUser);
@@ -72,10 +75,12 @@ app.post('/api/signup', async (req, res, next) => {
 app.post('/api/login', async (req, res, next) => {
     var error = '';
     const { login, password } = req.body;
+    // check hash ? 
+    const checkHash = crypto.createHash('sha256').update(password).digest('hex');
     const results = await
         db.collection('users').find({
             $or: [{name: login}, {email: login}],
-            passwordHash: password
+            passwordHash: checkHash
         }).toArray();
 
     var id = -1;
