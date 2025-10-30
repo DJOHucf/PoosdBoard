@@ -1,10 +1,12 @@
 
 // Imports
-const express = require('express');                 // express for get/post
-const bodyParser = require('body-parser');          // ?
-const cors = require('cors');                       // cors crap
-const MongoClient = require('mongodb').MongoClient; // database
-const WebSocket = require('ws');                    // WebSocket
+const express = require('express');
+const bodyParser = require('body-parser');
+const cors = require('cors');
+const MongoClient = require('mongodb').MongoClient;
+const WebSocket = require('ws');
+const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const readline = require('readline');               // readline for terminal debugging
 
 // Enviroment variables
@@ -54,7 +56,9 @@ app.listen(5000);
 // Signup 
 app.post('/api/signup', async (req, res, next) => {
     const { email, password, name } = req.body;
-    const newUser = {email: email, passwordHash: password, name: name, createdAt: new Date(), emailVerified: true};
+    // changed password -> hashedPassword
+    const hashedPassword = crypto.createHash('sha256').update(password).digest('hex');
+    const newUser = {email: email, passwordHash: hashedPassword, name: name, createdAt: new Date(), emailVerified: true};
     var error = '';
     try {
         const result = await db.collection('users').insertOne(newUser);
@@ -73,10 +77,12 @@ app.post('/api/signup', async (req, res, next) => {
 app.post('/api/login', async (req, res, next) => {
     var error = '';
     const { login, password } = req.body;
+    // check hash ? 
+    const checkHash = crypto.createHash('sha256').update(password).digest('hex');
     const results = await
         db.collection('users').find({
             $or: [{name: login}, {email: login}],
-            passwordHash: password
+            passwordHash: checkHash
         }).toArray();
 
     var id = -1;
@@ -87,6 +93,10 @@ app.post('/api/login', async (req, res, next) => {
         n = results[0].name;
     }
     else error = 'Invalid user/pass';
+
+    // testing
+    const token = jwt.sign({id}, JWT_SECRET, {expiresIn: '1h'});
+    res.status(200).json({token});
 
     var ret = {id: id, name: n, error:''};
     res.status(200).json(ret);
