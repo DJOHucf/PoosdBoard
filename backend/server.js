@@ -11,13 +11,14 @@ const readline = require('readline');               // readline for terminal deb
 
 // Enviroment variables
 require('dotenv').config();
-const url = process.env.MONGODB_URI;
+const MONGO_URL = process.env.MONGODB_URI;
+const JWT_SECRET = process.env.JWT_SECRET; 
 
 // Create Express app
 const app = express();
 
 // setup db connection
-const client = new MongoClient(url);
+const client = new MongoClient(MONGO_URL);
 client.connect();
 const db = client.db('collabboard');
 
