@@ -7,6 +7,7 @@ const MongoClient = require('mongodb').MongoClient;
 const WebSocket = require('ws');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const readline = require('readline');               // readline for terminal debugging
 
 // Enviroment variables
 require('dotenv').config();
@@ -39,13 +40,14 @@ app.use((req, res, next) => {
     next();
 });
 
+
 // on exit procedure
-process.on('SIGINT', async () => {
+function shutdown() {
     console.log('Shutting down...');
-    clients.forEach(client => client.close());
-    await pool.end();
     process.exit(0);
-});
+}
+process.on('SIGINT', shutdown);
+
 
 // Listen on 5000 for Get/Post requests
 app.listen(5000);
@@ -123,8 +125,8 @@ const DEFAULT_BALL_NUMS = 75;
 // Class for each tile on the board
 class Tile {
     constructor(i, game_options) {
-        value = generateValue(i, game_options);
-        marked = false;
+        this.value = this.generateValue(i, game_options);
+        this.marked = false;
     }
 
     // generate tiles value acc to rules above
@@ -136,71 +138,61 @@ class Tile {
         let max = num_balls/board_size * (column);          // ex: 75/5 * x; 15, 30, 45  
         return getRandomInteger(min, max);
     }
-
-    // serialize
-    serialize() {
-        return `{"value": ${value}, "marked": ${marked}}`;
-    }
 } 
 
 class Card {
-
-    constructor (game_options) {
-        let arr = [];
-        for (let index = BOARD_SIZE*BOARD_SIZE; index < array.length; index++) {
-            array.add(new Tile(i, game_options)); 
+    
+    // take in game options, go
+    constructor (go) {
+        this.array = [];
+        for (let index = 0; index < go.board_size*go.board_size; index++) {
+            this.array.push(new Tile(index, go)); 
         }
-    }
-
-    serialize() {
-        let str = `"card": { "arr": [`;
-        for (let index = 0; index < arr.length; index++) {
-            str += arr[index].serialize() + `,`
-        }
-        str += `] }`;
-        return str;
-    }
-
-    unserialize(str) {
-        
     }
 }
 
 class Owner {
-    constructor(_ws, auth) {
-        name = _name;   // display name  
-        id = _id;       // player id if logged in, else null
-        ws = _ws;       // current websocket
-        auth = _auth;   // auth token
+    constructor(_ws, _auth) {
+        //name = _name;   // display name  
+        //id = _id;       // player id if logged in, else null
+        this.ws = _ws;       // current websocket
+        this.auth = _auth;   // auth token
     }
 }
 class Player {
-    constructor(_name, _ws, auth) {
-        name = _name;   // display name if provided 
-        id = _id;       // player id if logged in, else null
-        ws = _ws;       // current websocket
-        auth = _auth;   // auth token
+    constructor(_name, _ws, _auth, _game) {
+        this.name = _name;   // display name if provided 
+        this.ws = _ws;       // current websocket
+        this.auth = _auth;   // auth token
+        this.game = _game;
+
+        this.card = new Card(this.game.options);
     }
 }
 
 class Game {
     constructor(_game_str, _messageObj, _ws) {
-        string = _game_str;                     // string to identify the game
-        options = _messageObj.game_options;  // game_options like board size, num balls etc
+        this.string = _game_str;                     // string to identify the game
 
-        owner = new Owner(ws, _messageObj.auth);  // set owner  
-        players = new Map();
+        // game_options like board size, num balls etc
+        this.options = {};
+        this.options.board_size = _messageObj.boardsize ? _messageObj.board_size : DEFAULT_BOARD_SIZE; 
+        this.options.num_balls = _messageObj.num_balls ? _messageObj.num_balls : DEFAULT_BALL_NUMS;
 
-        time_start = Date.now();
-        intervalID = setInterval(update(), interval);
+        this.owner = new Owner(_ws, _messageObj.auth);  // set owner  
+        this.players = new Map();
+
+        this.time_start = Date.now();
+        this.intervalID = setInterval(this.update, 1000);
+        this.count = 0;
     }
 
-    addPlayer(name, ws, auth) {
-        players.add(auth, new Player(name, ws, auth));
+    addPlayer(_name, _ws, _auth) {
+        this.players.set(_auth, new Player(_name, _ws, _auth, this));
     }
 
     update() {
-        
+        this.count++;
     }
 }
 
@@ -217,7 +209,7 @@ wss.on('listening', () => {
 
 wss.on('connection', (ws) => {
     console.log('Client connected');
-    ws.send("herro from da server");
+    ws.send("Connected");
 
     // Event listener for messages received from a client
     ws.on('message', message => {
@@ -245,6 +237,7 @@ wss.on('connection', (ws) => {
                 // Check for if host alr has game running (disconnection)
                 Games.forEach((value, game) => {
                     if (game.owner.auth == messageObj.auth) {
+                        ws.send("{'error': 'game already running, attempted reconnect'}");
                         game.owner.ws = ws; // and proceed as usual? idk
                         return;
                     }
@@ -253,7 +246,9 @@ wss.on('connection', (ws) => {
                 // make new game
                 let str = generateGameString();
                 Games.set(str, new Game(str, messageObj, ws));
-
+                ws.send(str);
+                
+                return;
             }
 
             // if setting up new player
@@ -274,9 +269,11 @@ wss.on('connection', (ws) => {
 
                 let auth = generateAuth() // TODO
 
-                Games.get(messageObj.gameStr).addPlayer(name, ws, auth);
+                Games.get(messageObj.string).addPlayer(messageObj.name, ws, auth);
 
                 ws.send(`{"auth": ${auth}}`) // TODO other info? board?
+
+                return;
             }
 
             // mark tile
@@ -288,12 +285,13 @@ wss.on('connection', (ws) => {
              *
              */
             if (messageObj.type === "mark tile") {
-               
+
                 let game = Games.get(messageObj.gameStr);
                 game.players.get(messageObj.auth);
 
 
-
+                
+                return;
             }
 
             // check for bingo
@@ -303,7 +301,9 @@ wss.on('connection', (ws) => {
              *
              */
             if (messageObj.type === "check bingo") {
-                
+
+
+                return;
             }
 
             // sample message for cpy paste
@@ -314,13 +314,15 @@ wss.on('connection', (ws) => {
              */
             if (messageObj.type === "") {
 
+
+                return;
             }
 
 
 
 
         } catch (e) {
-            ws.send("{'error': 'invalid message'}");
+            ws.send(`{'error': 'invalid message', 'message': ${e}}`);
         }
 
         // Optionally, send a response back to the client
@@ -351,7 +353,7 @@ function getRandomInteger(min, max) {
 // generate a random str 
 function generateGameString() {
     var result           = '';
-    var characters       = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    var characters       = 'abcdefghijklmnopqrstuvwxyz';
     var charactersLength = characters.length;
     for ( var i = 0; i < 6; i++ ) {
         result += characters.charAt(Math.floor(Math.random() * charactersLength));
@@ -363,3 +365,45 @@ function generateGameString() {
 function generateAuth() {
     return "disdaauthkey";
 }
+
+/*
+ *  Read and print to terminal for debugging
+ *  bc i dont have postman to test properly
+ */
+
+// Create the readline interface to listen for terminal input
+const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    prompt: 'SERVER > ', // Set a custom prompt
+});
+
+// Listen for 'line' events from the terminal
+rl.on('line', (line) => {
+    const command = line; // Normalize the command
+
+    if (command === "help") {
+
+        console.log(`
+            --  Server Help --
+            help      -   runs this command
+            print xxx -   executes xxx inside of a console.log()
+            `);
+    }
+    else if (command.includes("print "))
+    {
+        let str = command.split("print ")[1];
+        console.log(eval(str));
+    } else {
+        console.log("Invalid command");
+    }
+
+    rl.prompt(); // Display the prompt again for the next command
+});
+
+rl.on('close', () => {
+    console.log('Terminating input listener.');
+    shutdown();
+});
+
+rl.prompt();
