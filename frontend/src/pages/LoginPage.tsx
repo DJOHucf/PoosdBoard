@@ -1,11 +1,15 @@
 import PageTitle from '../components/PageTitle.tsx';
 import Login from '../components/Login.tsx';
 
-const LoginPage = () => {
+interface LoginPageProps {
+	onNavigateToSignup?: () => void;
+}
+
+const LoginPage = ({ onNavigateToSignup }: LoginPageProps) => {
 	return (
 		<div>
 			<PageTitle />
-			<Login />
+			<Login onNavigateToSignup={onNavigateToSignup} />
 		</div>
 	);
 };
