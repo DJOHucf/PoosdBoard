@@ -12,15 +12,21 @@ const readline = require('readline');               // readline for terminal deb
 // Enviroment variables
 require('dotenv').config();
 const MONGO_URL = process.env.MONGODB_URI;
-const JWT_SECRET = process.env.JWT_SECRET; 
+const JWT_SECRET = process.env.JWT_SECRET;
 
 // Create Express app
 const app = express();
+
+// read json
+app.use(express.json());
 
 // setup db connection
 const client = new MongoClient(MONGO_URL);
 client.connect();
 const db = client.db('collabboard');
+
+//const api = require('./api.js');
+//api.setApp( app, client );
 
 // CORS crap
 app.use(cors());
@@ -51,7 +57,20 @@ process.on('SIGINT', shutdown);
 
 
 // Listen on 5000 for Get/Post requests
-app.listen(5000);
+app.listen(5000, () => {
+	console.log("Listening on port 5000");
+});
+
+/*
+ *  Authentication
+ */
+
+//  key = auth token
+//  value = {
+//    id from database
+//    expiry
+//  }
+const Current_Users = new Map();
 
 
 // Signup 
@@ -67,7 +86,8 @@ app.post('/api/signup', async (req, res, next) => {
     }
 
     catch(e) {
-        error = e.toString();
+	    if(e.code === 11000) error = "Email already registered";
+	    else error = e.toString();
     }
     var ret = {error: error};
     res.status(200).json(ret);
@@ -97,11 +117,14 @@ app.post('/api/login', async (req, res, next) => {
 
     // testing
     const token = jwt.sign({id}, JWT_SECRET, {expiresIn: '1h'});
-    res.status(200).json({token});
-
-    var ret = {id: id, name: n, error:''};
-    res.status(200).json(ret);
+    res.status(200).json({"auth": token, "name": n, "error": ''});
 });
+
+// Find User
+/*app.post('/api/search', async (req, res, next) => {
+	var error = '';
+	const { name, 
+}*/
 
 
 /*
@@ -146,8 +169,22 @@ class Card {
     // take in game options, go
     constructor (go) {
         this.array = [];
-        for (let index = 0; index < go.board_size*go.board_size; index++) {
-            this.array.push(new Tile(index, go)); 
+        for (let index = 1; index <= go.board_size*go.board_size; index++) {
+
+            let i = 0;
+            while (i < 1000) {
+
+                let t = new Tile(index, go);
+
+                if (!this.array.some(item => item.value === t.value)){
+                    this.array.push(t);
+                    break;
+                }
+                i++;
+            }
+            if (i >= 1000) {
+                console.log("card builder is no worky")
+            }
         }
     }
 }
@@ -390,13 +427,12 @@ rl.on('line', (line) => {
             help      -   runs this command
             print xxx -   executes xxx inside of a console.log()
             `);
-    }
-    else if (command.includes("print "))
-    {
-        let str = command.split("print ")[1];
-        console.log(eval(str));
     } else {
-        console.log("Invalid command");
+        try {
+                console.log(eval(line));
+        } catch (error) {
+            console.log("Invalid command");
+        }
     }
 
     rl.prompt(); // Display the prompt again for the next command
