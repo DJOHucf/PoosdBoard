@@ -8,11 +8,20 @@ const WebSocket = require('ws');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const readline = require('readline');               // readline for terminal debugging
+const nodemailer = require('nodemailer');
+const https = require('https');
+const http = require('http');
+const fs = require('fs');
 
 // Enviroment variables
 require('dotenv').config();
 const MONGO_URL = process.env.MONGODB_URI;
 const JWT_SECRET = process.env.JWT_SECRET;
+const GOOGLE_PASS = process.env.GOOGLE_PASS;
+
+
+// utils 
+const utils = require('./utils.js');
 
 // Create Express app
 const app = express();
@@ -25,41 +34,32 @@ const client = new MongoClient(MONGO_URL);
 client.connect();
 const db = client.db('collabboard');
 
-//const api = require('./api.js');
-//api.setApp( app, client );
-
 // CORS crap
 app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use((req, res, next) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader(
-        'Access-Control-Allow-Headers',
-        'Origin, X-Requested-With, Content-Type, Accept, Authorization'
-    );
+	res.setHeader('Access-Control-Allow-Origin', '*');
+	res.setHeader(
+		'Access-Control-Allow-Headers',
+		'Origin, X-Requested-With, Content-Type, Accept, Authorization'
+	);
 
-    res.setHeader(
-        'Access-Control-Allow-Methods',
-        'GET, POST, PATCH, DELETE, OPTIONS'
-    );
+	res.setHeader(
+		'Access-Control-Allow-Methods',
+		'GET, POST, PATCH, DELETE, OPTIONS'
+	);
 
-    next();
+	next();
 });
 
 
 // on exit procedure
 function shutdown() {
-    console.log('Shutting down...');
-    process.exit(0);
+	console.log('Shutting down...');
+	process.exit(0);
 }
 process.on('SIGINT', shutdown);
-
-
-// Listen on 5000 for Get/Post requests
-app.listen(5000, () => {
-	console.log("Listening on port 5000");
-});
 
 /*
  *  Authentication
@@ -72,308 +72,761 @@ app.listen(5000, () => {
 //  }
 const Current_Users = new Map();
 
+// Store verification tokens temporarily (email: {token, expiry})
+const verificationTokens = new Map();
 
-// Signup 
-app.post('/api/signup', async (req, res, next) => {
-    const { email, password, name } = req.body;
-    // changed password -> hashedPassword
-    const hashedPassword = crypto.createHash('sha256').update(password).digest('hex');
-    const newUser = {email: email, passwordHash: hashedPassword, name: name, createdAt: new Date(), emailVerified: true};
-    var error = '';
-    try {
-        const result = await db.collection('users').insertOne(newUser);
-        error = 'Signed up';
-    }
-
-    catch(e) {
-	    if(e.code === 11000) error = "Email already registered";
-	    else error = e.toString();
-    }
-    var ret = {error: error};
-    res.status(200).json(ret);
-});
-
-
-// Login
-app.post('/api/login', async (req, res, next) => {
-    var error = '';
-    const { login, password } = req.body;
-    // check hash ? 
-    const checkHash = crypto.createHash('sha256').update(password).digest('hex');
-    const results = await
-        db.collection('users').find({
-            $or: [{name: login}, {email: login}],
-            passwordHash: checkHash
-        }).toArray();
-
-    var id = -1;
-    var n = '';
-
-    if(results.length > 0) {
-        id = results[0]._id;
-        n = results[0].name;
-    }
-    else error = 'Invalid user/pass';
-
-    // testing
-    const token = jwt.sign({id}, JWT_SECRET, {expiresIn: '1h'});
-    res.status(200).json({"auth": token, "name": n, "error": ''});
-});
-
-// Find User
-/*app.post('/api/search', async (req, res, next) => {
-	var error = '';
-	const { name, 
-}*/
-
+// Store 2FA tokens temporarily (email: {token, expiry})
+const twoFactorTokens = new Map();
 
 /*
- *    Bingo Game and Websocket shenanigans
+ *  Setting up Email Transporter
  */
-
-const DEFAULT_BOARD_SIZE = 5;
-const DEFAULT_BALL_NUMS = 75;
-
-/*  bingo generation rules: https://www.sciencenews.org/article/probabilities-bingo 
- *  first column: random between 1-15
- *  second 16-30
- *  31-45, except for middle which is -1 (free)
- *  46-60
- *  61-75
- *
- *  extending for bigger board sizes (?), num balls is 3x the num of tiles 
- *  with each column having 1/x of the nums dedicated to it
- *  median tile is free
- */
-
-// Class for each tile on the board
-class Tile {
-    constructor(i, game_options) {
-        this.value = this.generateValue(i, game_options);
-        this.marked = false;
+const transporter = nodemailer.createTransport({
+	service: "gmail",
+	auth: {
+		user: "dylan.n.thompson@gmail.com",
+		pass: GOOGLE_PASS,
+	},
+});
+console.log("Verifying email transporter...");
+try {
+    if(transporter.verify()) {
+        console.log("EMAIL TRANSPORTER VERIFIED!! YIPPEE!!")
     }
-
-    // generate tiles value acc to rules above
-    generateValue(i, game_options) {
-        let { board_size, num_balls } = game_options;
-
-        let column = Math.floor((i-1)/board_size) + 1;
-        let min = num_balls/board_size * (column - 1) + 1;  // ex: 75/5 * 0 + 1->(15*0) + 1; 1, 16, 31 etc
-        let max = num_balls/board_size * (column);          // ex: 75/5 * x; 15, 30, 45  
-        return getRandomInteger(min, max);
-    }
-} 
-
-class Card {
-    
-    // take in game options, go
-    constructor (go) {
-        this.array = [];
-        for (let index = 1; index <= go.board_size*go.board_size; index++) {
-
-            let i = 0;
-            while (i < 1000) {
-
-                let t = new Tile(index, go);
-
-                if (!this.array.some(item => item.value === t.value)){
-                    this.array.push(t);
-                    break;
-                }
-                i++;
-            }
-            if (i >= 1000) {
-                console.log("card builder is no worky")
-            }
-        }
-    }
+} catch (e) {
+    console.log("transporter failed:" + e);
 }
 
-class Owner {
-    constructor(_ws, _auth) {
-        //name = _name;   // display name  
-        //id = _id;       // player id if logged in, else null
-        this.ws = _ws;       // current websocket
-        this.auth = _auth;   // auth token
-    }
-}
-class Player {
-    constructor(_name, _ws, _auth, _game) {
-        this.name = _name;   // display name if provided 
-        this.ws = _ws;       // current websocket
-        this.auth = _auth;   // auth token
-        this.game = _game;
 
-        this.card = new Card(this.game.options);
-    }
+// Helper function to generate 6-digit verification code
+function generateVerificationCode() {
+	return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-class Game {
-    constructor(_game_str, _messageObj, _ws) {
-        this.string = _game_str;                     // string to identify the game
+// Send verification email
+app.post('/api/send-verification', async (req, res, next) => {
+	const { email } = req.body;
+	var error = '';
 
-        // game_options like board size, num balls etc
-        this.options = {};
-        this.options.board_size = _messageObj.boardsize ? _messageObj.board_size : DEFAULT_BOARD_SIZE; 
-        this.options.num_balls = _messageObj.num_balls ? _messageObj.num_balls : DEFAULT_BALL_NUMS;
+	console.log("Sending verification email to: " + email);
 
-        this.owner = new Owner(_ws, _messageObj.auth);  // set owner  
-        this.players = new Map();
+	try {
+		// Generate 6-digit code
+		const verificationCode = generateVerificationCode();
 
-        this.time_start = Date.now();
-        this.intervalID = setInterval(this.update, 1000);
-        this.count = 0;
-    }
+		// Store token with 15-minute expiry
+		verificationTokens.set(email, {
+			token: verificationCode,
+			expiry: Date.now() + 15 * 60 * 1000 // 15 minutes
+		});
 
-    addPlayer(_name, _ws, _auth) {
-        this.players.set(_auth, new Player(_name, _ws, _auth, this));
-    }
+		// Send email
+		const info = await transporter.sendMail({
+			from: 'dylan.n.thompson@gmail.com',
+			to: email,
+			subject: "Verify your PoosdBoard email",
+			text: `Your verification code is: ${verificationCode}\n\nThis code will expire in 15 minutes.`,
+			html: `
+				<div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px;">
+					<h2 style="color: #333;">Welcome to PoosdBoard!</h2>
+					<p>Thank you for signing up. Please use the following verification code to complete your registration:</p>
+					<div style="background-color: #f5f5f5; padding: 15px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; margin: 20px 0;">
+						${verificationCode}
+					</div>
+					<p style="color: #666;">This code will expire in 15 minutes.</p>
+					<p style="color: #999; font-size: 12px;">If you didn't request this verification, please ignore this email.</p>
+				</div>
+			`,
+		});
 
-    update() {
-        this.count++;
-    }
-}
+		console.log("Verification email sent:", info.messageId);
+	}
+	catch(e) {
+		error = e.toString();
+		console.error("Error sending verification email:", error);
+	}
+
+	res.status(200).json({error: error});
+});
+
+// Verify email code
+app.post('/api/verify-email', async (req, res, next) => {
+	const { email, code } = req.body;
+	var error = '';
+
+	try {
+		const storedData = verificationTokens.get(email);
+
+		if (!storedData) {
+			error = 'No verification code found. Please request a new one.';
+		} else if (Date.now() > storedData.expiry) {
+			verificationTokens.delete(email);
+			error = 'Verification code expired. Please request a new one.';
+		} else if (storedData.token !== code) {
+			error = 'Invalid verification code.';
+		} else {
+			// Code is valid - update user in database
+			await db.collection('users').updateOne(
+				{ email: email },
+				{ $set: { emailVerified: true } }
+			);
+
+			// Remove the token
+			verificationTokens.delete(email);
+			console.log(`Email verified for: ${email}`);
+		}
+	}
+	catch(e) {
+		error = e.toString();
+		console.error("Error verifying email:", error);
+	}
+
+	res.status(200).json({error: error, verified: error === ''});
+});
+
+// Signup
+app.post('/api/signup', async (req, res, next) => {
+	const { email, password, name } = req.body;
+	var error = '';
+
+	try {
+		// Check if user already exists
+		const existingUser = await db.collection('users').findOne({ email: email });
+
+		if (existingUser) {
+			error = "Email already registered";
+		} else {
+			// Hash password
+			const hashedPassword = crypto.createHash('sha256').update(password).digest('hex');
+
+			// Create new user with emailVerified set to false
+			const newUser = {
+				email: email,
+				passwordHash: hashedPassword,
+				name: name,
+				createdAt: new Date(),
+				emailVerified: false
+			};
+
+			// Insert user into database
+			const result = await db.collection('users').insertOne(newUser);
+
+			// Generate and send verification code
+			const verificationCode = generateVerificationCode();
+
+			// Store token with 15-minute expiry
+			verificationTokens.set(email, {
+				token: verificationCode,
+				expiry: Date.now() + 15 * 60 * 1000
+			});
+
+			// Send verification email
+			try {
+				await transporter.sendMail({
+					from: 'dylan.n.thompson@gmail.com',
+					to: email,
+					subject: "Verify your PoosdBoard email",
+					text: `Your verification code is: ${verificationCode}\n\nThis code will expire in 15 minutes.`,
+					html: `
+						<div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px;">
+							<h2 style="color: #333;">Welcome to PoosdBoard!</h2>
+							<p>Thank you for signing up. Please use the following verification code to complete your registration:</p>
+							<div style="background-color: #f5f5f5; padding: 15px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; margin: 20px 0;">
+								${verificationCode}
+							</div>
+							<p style="color: #666;">This code will expire in 15 minutes.</p>
+							<p style="color: #999; font-size: 12px;">If you didn't request this verification, please ignore this email.</p>
+						</div>
+					`,
+				});
+
+				console.log(`Verification email sent to: ${email}`);
+				error = 'Signed up'; // Success message
+			} catch(emailError) {
+				console.error("Error sending verification email:", emailError);
+				error = 'Signed up but email sending failed. Please use resend verification.';
+			}
+		}
+	}
+	catch(e) {
+		if(e.code === 11000) error = "Email already registered";
+		else error = e.toString();
+	}
+
+	var ret = {error: error};
+	res.status(200).json(ret);
+});
+
+
+// Login - Step 1: Verify credentials and send 2FA code
+app.post('/api/login', async (req, res, next) => {
+	var error = '';
+	const { login, password } = req.body;
+
+	try {
+		// Check credentials
+		const checkHash = crypto.createHash('sha256').update(password).digest('hex');
+		const results = await db.collection('users').find({
+			$or: [{name: login}, {email: login}],
+			passwordHash: checkHash
+		}).toArray();
+
+		if(results.length === 0) {
+			error = 'Invalid user/pass';
+			res.status(200).json({"error": error, "requiresVerification": false});
+			return;
+		}
+
+		const user = results[0];
+
+		// Check if email is verified
+		if (!user.emailVerified) {
+			error = 'Please verify your email before logging in';
+			res.status(200).json({
+				"error": error,
+				"requiresVerification": false,
+				"needsEmailVerification": true,
+				"email": user.email
+			});
+			return;
+		}
+
+		// Generate 2FA code
+		const twoFactorCode = generateVerificationCode();
+
+		// Store 2FA token with 10-minute expiry
+		twoFactorTokens.set(user.email, {
+			token: twoFactorCode,
+			userId: user._id,
+			userName: user.name,
+			expiry: Date.now() + 10 * 60 * 1000
+		});
+
+		// Send 2FA email
+		try {
+			await transporter.sendMail({
+				from: 'dylan.n.thompson@gmail.com',
+				to: user.email,
+				subject: "Your PoosdBoard Login Code",
+				text: `Your 2-factor authentication code is: ${twoFactorCode}\n\nThis code will expire in 10 minutes.\n\nIf you didn't attempt to log in, please secure your account.`,
+				html: `
+					<div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px;">
+						<h2 style="color: #333;">Login Verification</h2>
+						<p>A login attempt was made to your PoosdBoard account. Please use the following code to complete your login:</p>
+						<div style="background-color: #f5f5f5; padding: 15px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; margin: 20px 0;">
+							${twoFactorCode}
+						</div>
+						<p style="color: #666;">This code will expire in 10 minutes.</p>
+						<p style="color: #999; font-size: 12px;">If you didn't attempt to log in, please ignore this email and consider changing your password.</p>
+					</div>
+				`,
+			});
+
+			console.log(`2FA code sent to: ${user.email}`);
+
+			res.status(200).json({
+				"error": '',
+				"requires2FA": true,
+				"email": user.email,
+				"message": "Verification code sent to your email"
+			});
+		} catch(emailError) {
+			console.error("Error sending 2FA email:", emailError);
+			error = 'Failed to send verification code. Please try again.';
+			res.status(200).json({"error": error, "requires2FA": false});
+		}
+	}
+	catch(e) {
+		error = e.toString();
+		console.error("Login error:", error);
+		res.status(200).json({"error": error, "requires2FA": false});
+	}
+});
+
+// Login - Step 2: Verify 2FA code and issue token
+app.post('/api/verify-2fa', async (req, res, next) => {
+	var error = '';
+	const { email, code } = req.body;
+
+	try {
+		const storedData = twoFactorTokens.get(email);
+
+		if (!storedData) {
+			error = 'No 2FA code found. Please log in again.';
+		} else if (Date.now() > storedData.expiry) {
+			twoFactorTokens.delete(email);
+			error = '2FA code expired. Please log in again.';
+		} else if (storedData.token !== code) {
+			error = 'Invalid 2FA code.';
+		} else {
+			// Code is valid - issue JWT token
+			const token = jwt.sign({id: storedData.userId}, JWT_SECRET, {expiresIn: '1h'});
+
+			// Remove the 2FA token
+			twoFactorTokens.delete(email);
+
+			console.log(`2FA verified for: ${email}`);
+
+			res.status(200).json({
+				"auth": token,
+				"name": storedData.userName,
+				"error": ''
+			});
+			return;
+		}
+	}
+	catch(e) {
+		error = e.toString();
+		console.error("2FA verification error:", error);
+	}
+
+	res.status(200).json({"error": error});
+});
+
+
+// Get list of ongoing games
+app.get('/api/games', async (req, res, next) => {
+	try {
+		const gamesList = [];
+		Games.forEach((game, gameId) => {
+			gamesList.push({
+				gameId: game.string,
+				playerCount: game.players.length,
+				started: game.started,
+				timeStarted: game.time_start
+			});
+		});
+		res.status(200).json({ games: gamesList, error: '' });
+	} catch (e) {
+		res.status(500).json({ games: [], error: e.toString() });
+	}
+});
+
+
+// Create HTTP server that handles both Express app and WebSocket
+const server = http.createServer(app);
+
+// Setup WS server attached to HTTP server
+const wss = new WebSocket.Server({ server });
+
+// Start the server on port 5000
+server.listen(5000, () => {
+	console.log('Server listening on port 5000 (HTTP + WebSocket)');
+});
+
 
 let Games = new Map();
 
-// Setup WS server
-const wss = new WebSocket.Server({ port: 8080 });
+// Helper function to find game for a given websocket
+function getCurrentGameString(ws) {
+	for (let [gameString, game] of Games) {
+		if (game.players.some(p => p.ws === ws)) {
+			return gameString;
+		}
+	}
+	return null;
+}
 
-// On WSS startup, log it
-wss.on('listening', () => {
-    console.log('WebSocket server listening on port 8080');
-});
+// Validate bingo pattern
+function validateBingo(tiles, card, pulledTiles, boardSize) {
+	if (!tiles || tiles.length !== boardSize) return false;
 
+	// Check if all selected tiles are actually marked/called
+	for (let tileIndex of tiles) {
+		const tileValue = card.array[tileIndex].value;
+		// Free space (-1) is always valid, or tile must be in pulledTiles
+		if (tileValue !== -1 && !pulledTiles.includes(tileValue)) {
+			return false;
+		}
+	}
+
+	// Check if tiles form a valid bingo pattern (row, column, or diagonal)
+	const sortedTiles = [...tiles].sort((a, b) => a - b);
+
+	// Check rows
+	for (let row = 0; row < boardSize; row++) {
+		const rowTiles = Array.from({ length: boardSize }, (_, i) => row * boardSize + i);
+		if (JSON.stringify(sortedTiles) === JSON.stringify(rowTiles)) return true;
+	}
+
+	// Check columns
+	for (let col = 0; col < boardSize; col++) {
+		const colTiles = Array.from({ length: boardSize }, (_, i) => i * boardSize + col).sort((a, b) => a - b);
+		if (JSON.stringify(sortedTiles) === JSON.stringify(colTiles)) return true;
+	}
+
+	// Check diagonal (top-left to bottom-right)
+	const diag1 = Array.from({ length: boardSize }, (_, i) => i * boardSize + i);
+	if (JSON.stringify(sortedTiles) === JSON.stringify(diag1)) return true;
+
+	// Check diagonal (top-right to bottom-left)
+	const diag2 = Array.from({ length: boardSize }, (_, i) => i * boardSize + (boardSize - 1 - i)).sort((a, b) => a - b);
+	if (JSON.stringify(sortedTiles) === JSON.stringify(diag2)) return true;
+
+	return false;
+}
+
+/*
+ *  websocket schenanigans
+ */
+
+const { Tile, Card, Player, Owner, Game } = require("./game.js");
 
 wss.on('connection', (ws) => {
-    console.log('Client connected');
-    ws.send("Connected");
+	console.log('Client connected');
+	ws.send(JSON.stringify({ type: "connection", message: "Connected" }));
 
-    // Event listener for messages received from a client
-    ws.on('message', message => {
-        console.log(`Received message from client: ${message}`);
+	// Event listener for messages received from a client
+	ws.on('message', message => {
+		console.log(`Received message from client: ${message}`);
 
-        try {
+		try {
 
-            let messageObj = JSON.parse(message);
+			let messageObj = JSON.parse(message);
 
-            // create new game
-            /*
-             *  JSON requirements:
-             *    - messageObj.type === "new game"
-             *    - owner name
-             *    - owner auth token to verify signed in
-             *    - game settings?
-             *      - time till pull?
-             *      - board size maybe?
-             *
-             */
-            if (messageObj.type === "new game") {
+			switch (messageObj.type) {
 
-                // TODO authenticate user as logged in to start game
+				/*
+				 *   General Requests
+				 */
 
-                // Check for if host alr has game running (disconnection)
-                Games.forEach((value, game) => {
-                    if (game.owner.auth == messageObj.auth) {
-                        ws.send("{'error': 'game already running, attempted reconnect'}");
-                        game.owner.ws = ws; // and proceed as usual? idk
-                        return;
-                    }
-                });
+				case "list games":
+				// List all ongoing games
+				const gamesList = [];
+				Games.forEach((game, gameId) => {
+					gamesList.push({
+						gameId: game.string,
+						playerCount: game.players.length,
+						started: game.started,
+						timeStarted: game.time_start
+					});
+				});
+				ws.send(JSON.stringify({ type: "games list", games: gamesList }));
+				return;
 
-                // make new game
-                let str = generateGameString();
-                Games.set(str, new Game(str, messageObj, ws));
-                ws.send(str);
-                
-                return;
-            }
+				/*
+				 *   Requests for Owner
+				 */
 
-            // if setting up new player
-            /*
-             *  JSON requirements:
-             *    - messageObj.type === "join game"
-             *    - player name (for display)
-             *    - game str
-             *    i think thats it actually
-             *
-             *    need to generate an auth token and return it
-             */
-            if (messageObj.type === "join game") {
+				case "new game":
 
-                // TODO json checks to make sure all fields valid
-                if (messageObj.name == null || messageObj.name == "")
-                    ws.send("{'error': 'invalid message'}");
+				// create new game
+				/*
+				 *  JSON requirements:
+				 *    - messageObj.type === "new game"
+				 *    - owner name
+				 *    - owner auth token to verify signed in
+				 *    - game settings?
+				 *      - time till pull?
+				 *      - board size maybe?
+				 *
+				 */
+				// TODO authenticate user as logged in to start game
 
-                let auth = generateAuth() // TODO
+				// End all existing games for this host
+				const gamesToRemove = [];
+				Games.forEach((game, gameId) => {
+					if (game.owner.auth == messageObj.auth) {
+						console.log(`Ending previous game ${gameId} for host`);
 
-                Games.get(messageObj.string).addPlayer(messageObj.name, ws, auth);
+						// Clear the update interval
+						if (game.intervalID) {
+							clearInterval(game.intervalID);
+						}
 
-                ws.send(`{"auth": ${auth}}`) // TODO other info? board?
+						// Notify all players that the game has ended
+						game.players.forEach((player) => {
+							try {
+								if (player.ws && player.ws.readyState === WebSocket.OPEN) {
+									player.ws.send(JSON.stringify({ 
+										type: "game ended", 
+										reason: "Host started a new game" 
+									}));
+								}
+							} catch (err) {
+								console.error('Error notifying player:', err);
+							}
+						});
 
-                return;
-            }
+						// Mark for removal
+						gamesToRemove.push(gameId);
+					}
+				});
 
-            // mark tile
-            /*
-             *  JSON requirements:
-             *  - auth token
-             *  - type === "mark tile"
-             *  - game str
-             *
-             */
-            if (messageObj.type === "mark tile") {
+				// Remove the old games
+				gamesToRemove.forEach(gameId => {
+					Games.delete(gameId);
+					console.log(`Removed game ${gameId} from active games`);
+				});
 
-                let game = Games.get(messageObj.gameStr);
-                game.players.get(messageObj.auth);
+				// make new game
+				let str = generateGameString();
+				Games.set(str, new Game(str, messageObj, ws));
+				ws.gameStr = str;
+				ws.send(JSON.stringify({type: 'new game success', gameString: str}));
 
+				return;
 
-                
-                return;
-            }
+				case "reconnect host":
+				/*
+				 *  JSON requirements:
+				 *    - type === "reconnect host"
+				 *    - gameString - the game ID to reconnect to
+				 *    - auth - auth token to verify ownership
+				 */
 
-            // check for bingo
-            /*
-             *  JSON requirements:
-             *  
-             *
-             */
-            if (messageObj.type === "check bingo") {
+				console.log(`\n>>> RECONNECT HOST request received`);
+				console.log(`    Game string: "${messageObj.gameString}"`);
 
+				if (!messageObj.gameString || messageObj.gameString === "") {
+					ws.send(JSON.stringify({ type: "error", error: 'invalid game string' }));
+					return;
+				}
 
-                return;
-            }
+				let reconnectGame = Games.get(messageObj.gameString);
 
-            // sample message for cpy paste
-            /*
-             *  JSON requirements:
-             *  - auth token
-             *
-             */
-            if (messageObj.type === "") {
+				if (!reconnectGame) {
+					console.log(`Game not found: ${messageObj.gameString}`);
+					ws.send(JSON.stringify({ type: "error", error: 'game not found' }));
+					return;
+				}
 
+				// Verify auth token matches (optional but recommended)
+				if (messageObj.auth && reconnectGame.owner.auth !== messageObj.auth) {
+					console.log(`Auth mismatch for game ${messageObj.gameString}`);
+					ws.send(JSON.stringify({ type: "error", error: 'unauthorized' }));
+					return;
+				}
 
-                return;
-            }
+				console.log(`Host reconnecting to game ${messageObj.gameString}`);
 
+				// Update the owner's websocket
+				reconnectGame.owner.ws = ws;
+				ws.gameStr = messageObj.gameString;
 
+				// Send back the current game state
+				ws.send(JSON.stringify({
+					type: 'reconnect host success',
+					gameString: messageObj.gameString,
+					state: reconnectGame.getGameState()
+				}));
 
+				console.log(`>>> RECONNECT HOST complete\n`);
+				return;
 
-        } catch (e) {
-            ws.send(`{'error': 'invalid message', 'message': ${e}}`);
-        }
+				case "game start":
+				/*
+				 *  JSON requirements:
+				 *    - type === "game start"
+				 *    - game str
+				 */
+				let startGame = Games.get(ws.gameStr);
 
-        // Optionally, send a response back to the client
-        ws.send(`Server received your message: ${message}`);
-    });
+				// Mark game as started
+				startGame.started = true;
 
-    ws.on('close', () => {
-        console.log('Client disconnected');
-    });
+				// Notify all players that the game has started
+				startGame.players.forEach((player) => {
+					player.ws.send(JSON.stringify({ type: "game start" }));
+				});
 
-    ws.on('error', (error) => {
-        console.error('WebSocket error:', error);
-    });
+				ws.send(JSON.stringify({ type: "game start success" }));
+				return;
+
+				case "game pull tile":
+
+				/*
+				 *  JSON requirements:
+				 *    - type === "game new tile"
+				 *    - game str
+				 */
+
+				let pullGame = Games.get(ws.gameStr);
+				let tile = pullGame.pullTile();
+				//game.gameStateChanged = true;
+
+				// notify all players
+				pullGame.players.forEach( (player) => {
+					player.ws.send( JSON.stringify( { type: "game update", state: pullGame.getGameState() } ) );
+				});
+
+				let numPlayersWith = pullGame.getNumPlayersWithCard(tile);
+
+				ws.send( JSON.stringify( { type: "game new tile success", tile: tile, numPlayersWith: numPlayersWith } ) );
+
+				return;
+
+				/*
+				 *  Requests for players
+				 */
+
+				case "join game":
+				// if setting up new player
+				/*
+				 *  JSON requirements:
+				 *    - messageObj.type === "join game"
+				 *    - player name (for display)
+				 *    - game str
+				 */
+
+				console.log(`\n>>> JOIN GAME request received`);
+				console.log(`    Player name: "${messageObj.playerName}"`);
+				console.log(`    Game string: "${messageObj.string}"`);
+
+				// TODO json checks to make sure all fields valid
+				if (!messageObj.playerName || messageObj.playerName === "") {
+					ws.send(JSON.stringify({ type: "error", error: 'invalid player name' }));
+					return;
+				}
+
+				if (!messageObj.string || messageObj.string === "") {
+					ws.send(JSON.stringify({ type: "error", error: 'invalid game string' }));
+					return;
+				}
+
+				let joinGame = Games.get(messageObj.string);
+
+				if (!joinGame) {
+					console.log(`Game not found: ${messageObj.string}`);
+					ws.send(JSON.stringify({ type: "error", error: 'game not found' }));
+					return;
+				}
+
+				console.log(`Player ${messageObj.playerName} joining game ${messageObj.string}`);
+
+				let playerId = joinGame.addPlayer(messageObj.playerName, ws);
+
+				ws.playerId = playerId; // attach player id to ws for future ref
+				ws.gameStr = messageObj.string; // attach game str to ws for future ref
+
+				console.log(`>>> Player ID ${playerId} assigned to ${messageObj.playerName}`);
+				console.log(`    Sending board from index: ${playerId}`);
+				console.log(`    Board numbers:`, joinGame.players[playerId].card.array.map(t => t.value));
+
+				ws.send(JSON.stringify({
+					type: "join player success", 
+					board: joinGame.players[playerId].card,  // playerId is now 0-indexed
+					playerId: playerId,
+					started: joinGame.started,
+					pulledTiles: joinGame.pulledTiles
+				}));
+
+				console.log(`>>> JOIN GAME complete. Notifying host...\n`);
+
+				// Notify host of new player
+				console.log(`Notifying host of game ${messageObj.string} about new player`);
+				joinGame.owner.ws.send(JSON.stringify({ type: "game update", state: joinGame.getGameState() }));
+
+				//game.gameStateChanged = true;
+
+				return;
+
+				case "mark cell":
+
+				// mark tile
+				/*
+				 *  JSON requirements:
+				 *  - type === "mark cell"
+				 *  - tileIndex
+				 *
+				 */
+				let markGame = Games.get(ws.gameStr);
+				let markPlayer = markGame.players[ws.playerId];  // playerId is now 0-indexed
+
+				// Allow marking -1 (free space) without checking pulledTiles
+				const tileValue = markPlayer.card.array[messageObj.tileIndex].value;
+				if (tileValue !== -1 && !markGame.pulledTiles.includes(tileValue)) {
+					ws.send(JSON.stringify({type: "mark cell fail", error: 'tile not pulled yet'}));
+					return;
+				}
+
+				markPlayer.card.array[messageObj.tileIndex].marked = true;
+
+				ws.send(JSON.stringify({type: "mark cell success", index: messageObj.tileIndex}));
+				return;
+
+				case "check bingo":
+
+				// check for bingo
+				/*
+				 *   JSON requirements:
+				 *   type === "bingo check"
+				 *   tiles[] - containing the n tile indexes that supposedly have bingo
+				 *
+				 */
+				let bingoGame = Games.get(ws.gameStr);
+
+				if (!bingoGame) {
+					ws.send(JSON.stringify({ type: "error", error: "Game not found" }));
+					return;
+				}
+
+				let bingoPlayer = bingoGame.players[ws.playerId];
+
+				if (!bingoPlayer) {
+					ws.send(JSON.stringify({ type: "error", error: "Player not found" }));
+					return;
+				}
+
+				let tiles = messageObj.tiles;
+
+				// Validate the bingo pattern
+				const isValidBingo = validateBingo(tiles, bingoPlayer.card, bingoGame.pulledTiles, bingoGame.options.board_size);
+
+				if (isValidBingo) {
+					console.log(`🎉 BINGO! Player ${bingoPlayer.name} (ID: ${bingoPlayer.playerId}) won the game!`);
+
+					// Send success to the player
+					ws.send(JSON.stringify({ type: "bingo check success" }));
+
+					// Notify the host about the winner
+					bingoGame.owner.ws.send(JSON.stringify({ 
+						type: "game finished", 
+						winnerName: bingoPlayer.name,
+						winnerPlayerId: bingoPlayer.playerId
+					}));
+
+					// Optionally notify all other players
+					bingoGame.players.forEach(p => {
+						if (p.ws !== ws && p.ws.readyState === WebSocket.OPEN) {
+							try {
+								p.ws.send(JSON.stringify({ 
+									type: "game finished", 
+									winnerName: bingoPlayer.name 
+								}));
+							} catch (err) {
+								console.error('Error notifying player:', err);
+							}
+						}
+					});
+				} else {
+					console.log(`❌ Invalid bingo claim from ${bingoPlayer.name}`);
+					ws.send(JSON.stringify({ 
+						type: "bingo check fail", 
+						error: "Invalid bingo pattern or unmarked numbers" 
+					}));
+				}
+
+				return;
+
+				default:
+				ws.send(JSON.stringify({ error: 'invalid message type' }));
+				return;
+			}
+
+		} catch (e) {
+			ws.send(JSON.stringify({ error: 'invalid message', message: e }));
+		}
+
+	});
+
+	ws.on('close', () => {
+		console.log('Client disconnected');
+	});
+
+	ws.on('error', (error) => {
+		console.error('WebSocket error:', error);
+	});
 });
 
 
@@ -382,26 +835,23 @@ wss.on('connection', (ws) => {
  */
 
 // stolen from ai lol
+
+/*
 // Generate a random integer between 1 and 10 (inclusive)
 function getRandomInteger(min, max) {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
+	return Math.floor(Math.random() * (max - min + 1)) + min;
 }
-
 
 // generate a random str 
 function generateGameString() {
-    var result           = '';
-    var characters       = 'abcdefghijklmnopqrstuvwxyz';
-    var charactersLength = characters.length;
-    for ( var i = 0; i < 6; i++ ) {
-        result += characters.charAt(Math.floor(Math.random() * charactersLength));
-    }
-    return result;
+	// Generate a 6-digit numeric game ID
+	return String(Math.floor(100000 + Math.random() * 900000));
 }
+*/
 
 // generate and auth key somehow
 function generateAuth() {
-    return "disdaauthkey";
+	return "disdaauthkey";
 }
 
 /*
@@ -409,38 +859,45 @@ function generateAuth() {
  *  bc i dont have postman to test properly
  */
 
-// Create the readline interface to listen for terminal input
-const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-    prompt: 'SERVER > ', // Set a custom prompt
-});
+// Only enable readline interface if running in interactive mode (not in background)
+if (process.stdin.isTTY) {
+	// Create the readline interface to listen for terminal input
+	const rl = readline.createInterface({
+		input: process.stdin,
+		output: process.stdout,
+		prompt: 'SERVER > ', // Set a custom prompt
+	});
 
-// Listen for 'line' events from the terminal
-rl.on('line', (line) => {
-    const command = line; // Normalize the command
+	// Listen for 'line' events from the terminal
+	rl.on('line', (line) => {
+		const command = line; // Normalize the command
 
-    if (command === "help") {
+		if (command === "help") {
 
-        console.log(`
-            --  Server Help --
-            help      -   runs this command
-            print xxx -   executes xxx inside of a console.log()
-            `);
-    } else {
-        try {
-                console.log(eval(line));
-        } catch (error) {
-            console.log("Invalid command");
-        }
-    }
+			console.log(`
+	    --  Server Help --
+	    help      -   runs this command
+	    print xxx -   executes xxx inside of a console.log()
+	    `);
+		} else {
+			try {
+				console.log(eval(line));
+			} catch (error) {
+				console.log("Invalid command");
+			}
+		}
 
-    rl.prompt(); // Display the prompt again for the next command
-});
+		rl.prompt(); // Display the prompt again for the next command
+	});
 
-rl.on('close', () => {
-    console.log('Terminating input listener.');
-    shutdown();
-});
+	rl.on('close', () => {
+		console.log('Terminating input listener.');
+		shutdown();
+	});
 
-rl.prompt();
+	rl.prompt();
+} else {
+	console.log('Running in background mode - readline interface disabled');
+}
+
+module.exports = { generateGameString };

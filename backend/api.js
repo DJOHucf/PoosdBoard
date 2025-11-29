@@ -45,4 +45,46 @@ exports.setApp = function( app, client ) {
 		var ret = {error: error};
 		res.status(200).json(ret);
 	});
+
+	app.post('/api/verify', async (req, res, next) => {
+		const {email} = req.body;
+		var error = '';
+
+		const GOOGLE_PASS = process.env.GOOGLE_PASS;
+		const transporter = nodemailer.createTransport({
+			service: "gmail",
+			auth: {
+				user: "dylan.n.thompson@gmail.com",
+				pass: GOOGLE_PASS,
+			},
+		});
+
+		console.log("Verifying email transporter...");
+
+		try {
+			await transporter.verify();
+			console.log("Server is ready to take our messages");
+		}
+		catch(e) {
+			error = e.toString();
+		}
+		
+		try {
+			const info = await transporter.sendMail({
+				from: '"Dylan Thompson" <dylan.n.thompson@gmail.com>',
+				to: email,
+				subject: "Verify your email",
+				text: "",
+				html: "<p></p>",
+			});
+			console.log("Info:", info);
+			console.log("Message:", info.messageId);
+		}
+		catch(e) {
+			error = e.toString();
+		}
+		var ret = {error: error};
+		res.status(200).json(ret);
+	});
+
 }

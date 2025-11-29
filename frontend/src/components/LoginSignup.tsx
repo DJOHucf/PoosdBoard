@@ -1,8 +1,13 @@
 import { useState } from "react";
+import EmailVerification from "./EmailVerification";
+import TwoFactorVerification from "./TwoFactorVerification";
 
 function LoginSignup() {
-    const [activeTab, setActiveTab] = useState('login'); 
+    const [activeTab, setActiveTab] = useState('login');
     const [showForgotPassword, setShowForgotPassword] = useState(false);
+    const [showEmailVerification, setShowEmailVerification] = useState(false);
+    const [show2FA, setShow2FA] = useState(false);
+    const [verificationEmail, setVerificationEmail] = useState('');
 
     function doLogin(event: React.MouseEvent<HTMLButtonElement>) {
         event.preventDefault();
@@ -10,7 +15,7 @@ function LoginSignup() {
         const login = (document.getElementById('loginName') as HTMLInputElement)?.value;
         const password = (document.getElementById('loginPassword') as HTMLInputElement)?.value;
         const resultDiv = document.getElementById('loginResult');
-        
+
         if (!login || !password) {
             if (resultDiv) {
                 resultDiv.style.color = '#ef4444';
@@ -28,12 +33,32 @@ function LoginSignup() {
                 const data = await response.json();
 
                 if (data.error && data.error !== '') {
+                    // Check if user needs email verification
+                    if (data.needsEmailVerification && data.email) {
+                        setVerificationEmail(data.email);
+                        setShowEmailVerification(true);
+                        return;
+                    }
                     throw new Error(data.error);
                 }
 
-                localStorage.setItem('token', data.auth);
-                localStorage.setItem('name', data.name);
-                window.location.href = '/dashboard';
+                // Check if 2FA is required
+                if (data.requires2FA && data.email) {
+                    setVerificationEmail(data.email);
+                    setShow2FA(true);
+                    if (resultDiv) {
+                        resultDiv.style.color = '#22c55e';
+                        resultDiv.textContent = data.message || 'Verification code sent!';
+                    }
+                    return;
+                }
+
+                // Direct login (shouldn't happen with 2FA enabled)
+                if (data.auth && data.name) {
+                    localStorage.setItem('token', data.auth);
+                    localStorage.setItem('name', data.name);
+                    window.location.href = '/dashboard';
+                }
             })
             .catch((error) => {
                 console.error('Login failed:', error);
@@ -73,12 +98,18 @@ function LoginSignup() {
         fetch('https://poosdboard.com/api/signup', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password, username })
+            body: JSON.stringify({ email, password, name: username })
         })
             .then(async (res) => {
-                await res.json();
-                alert('Account created successfully!');
-                setActiveTab('login');
+                const data = await res.json();
+
+                if (data.error && data.error !== 'Signed up' && !data.error.includes('Signed up')) {
+                    throw new Error(data.error);
+                }
+
+                // Show email verification screen
+                setVerificationEmail(email);
+                setShowEmailVerification(true);
             })
             .catch((err) => {
                 console.error('Signup error:', err);
@@ -279,6 +310,43 @@ function LoginSignup() {
         transition: 'all 0.3s ease',
         textShadow: '1px 1px 2px rgba(0, 0, 0, 0.2)',
     };
+
+    // Handlers for verification components
+    const handle2FASuccess = (token: string, name: string) => {
+        localStorage.setItem('token', token);
+        localStorage.setItem('name', name);
+        window.location.href = '/dashboard';
+    };
+
+    const handleEmailVerificationComplete = () => {
+        setShowEmailVerification(false);
+        setActiveTab('login');
+    };
+
+    const handle2FACancel = () => {
+        setShow2FA(false);
+    };
+
+    // If showing email verification, render that component
+    if (showEmailVerification) {
+        return (
+            <EmailVerification
+                email={verificationEmail}
+                onVerificationComplete={handleEmailVerificationComplete}
+            />
+        );
+    }
+
+    // If showing 2FA, render that component
+    if (show2FA) {
+        return (
+            <TwoFactorVerification
+                email={verificationEmail}
+                onVerificationSuccess={handle2FASuccess}
+                onCancel={handle2FACancel}
+            />
+        );
+    }
 
     return (
         <>

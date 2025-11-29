@@ -1,48 +1,58 @@
-import PageTitle from '../components/PageTitle.tsx';
-function Dashboard() {
+import React, { useState } from 'react';
+
+function Dashboard() {  
 	const name = localStorage.getItem('name') || 'User';
 	const token = localStorage.getItem('token');
+	const [sidebarOpen, setSidebarOpen] = useState(false);
 
 	if (!token) {
-		window.location.href = '/';
+		window.location.href = '/login';
 		return null;
 	}
 
 	function handleLogout() {
+		console.log('Logout clicked');
 		localStorage.removeItem('token');
 		localStorage.removeItem('name');
-		window.location.href = '/';
-	}
-
-	function setGameId() {
-		const gameId = Math.floor(100000 + Math.random() * 900000).toString();
-		localStorage.setItem('gameId', gameId);
-		// TODO: You might want to inform the backend about the new gameId here
+		localStorage.removeItem('gameId');
+		window.location.href = '/login';
 	}
 
 	function handleStartGame() {
-		setGameId();
-		const gameId = localStorage.getItem('gameId');
-		window.location.href = `/host/${gameId}`;
+		console.log('Start game clicked');
+		// Generate a temporary game ID
+		const tempGameId = 'pending';
+		localStorage.setItem('gameId', tempGameId);
+		// Navigate to host page
+		window.location.href = `/host/${tempGameId}`;
+		localStorage.setItem('isHostActive', 'true');
 	}
 
-	const layoutStyle = {
+	const layoutStyle: React.CSSProperties = {
 		display: 'flex',
+		flexDirection: 'column',
 		minHeight: '100vh',
+		width: '100vw',
+		margin: 0,
+		padding: 0,
 		fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
 		background: 'linear-gradient(135deg, #FDB813 0%, #FF6B6B 20%, #FF8FC7 40%, #4ECDC4 60%, #45B7D1 80%, #FDB813 100%)',
 		backgroundSize: '400% 400%',
+		backgroundAttachment: 'fixed',
 		animation: 'gradientShift 15s ease infinite',
-		position: 'relative' as const,
+		position: 'fixed',
+		top: 0,
+		left: 0,
 		overflow: 'hidden',
+		boxSizing: 'border-box',
 	};
 
 	const backgroundOverlay1Style = {
 		position: 'absolute' as const,
 		top: '50%',
 		left: '50%',
-		width: '800px',
-		height: '800px',
+		width: '150vw',
+		height: '150vh',
 		transform: 'translate(-50%, -50%)',
 		background: `conic-gradient(
 			from 0deg,
@@ -87,25 +97,80 @@ function Dashboard() {
 		zIndex: 1,
 	};
 
-	const sidebarStyle = {
+	const mobileHeaderStyle: React.CSSProperties = {
+		display: 'none',
+		padding: '12px 20px',
+		backdropFilter: 'blur(20px)',
+		background: 'rgba(255, 255, 255, 0.3)',
+		borderBottom: '1px solid rgba(255, 255, 255, 0.4)',
+		position: 'relative',
+		zIndex: 20,
+		alignItems: 'center',
+		justifyContent: 'space-between',
+	};
+
+	const hamburgerStyle: React.CSSProperties = {
+		fontSize: '28px',
+		cursor: 'pointer',
+		color: 'white',
+		textShadow: '1px 1px 2px rgba(0, 0, 0, 0.2)',
+	};
+
+	const contentWrapperStyle: React.CSSProperties = {
+		display: 'flex',
+		flex: 1,
+		position: 'relative',
+		zIndex: 10,
+	};
+
+	const sidebarStyle: React.CSSProperties = {
 		width: '280px',
 		backdropFilter: 'blur(20px)',
-		background: 'rgba(255, 255, 255, 0.25)',
+		background: 'rgba(255, 255, 255, 0.3)',
 		borderRight: '1px solid rgba(255, 255, 255, 0.4)',
 		display: 'flex',
-		flexDirection: 'column' as const,
+		flexDirection: 'column',
 		padding: '32px 20px',
 		boxShadow: '4px 0 24px rgba(0, 0, 0, 0.1)',
-		position: 'relative' as const,
+		position: 'relative',
 		zIndex: 10,
+	};
+
+	const mobileSidebarStyle: React.CSSProperties = {
+		width: '280px',
+		backdropFilter: 'blur(20px)',
+		background: 'rgba(255, 255, 255, 0.3)',
+		borderRight: '1px solid rgba(255, 255, 255, 0.4)',
+		display: 'flex',
+		flexDirection: 'column',
+		padding: '32px 20px',
+		boxShadow: '4px 0 24px rgba(0, 0, 0, 0.1)',
+		position: 'fixed',
+		top: 0,
+		left: 0,
+		height: '100vh',
+		transform: sidebarOpen ? 'translateX(0)' : 'translateX(-100%)',
+		transition: 'transform 0.3s ease',
+		zIndex: 30,
+	};
+
+	const overlayStyle: React.CSSProperties = {
+		display: sidebarOpen ? 'block' : 'none',
+		position: 'fixed',
+		top: 0,
+		left: 0,
+		right: 0,
+		bottom: 0,
+		background: 'rgba(0, 0, 0, 0.5)',
+		zIndex: 25,
 	};
 
 	const sidebarItem = {
 		marginBottom: '16px',
 		cursor: 'pointer',
-		fontSize: '16px',
+		fontSize: 'clamp(14px, 2.5vw, 16px)',
 		fontWeight: 600,
-		padding: '14px 20px',
+		padding: 'clamp(12px, 2vw, 14px) clamp(16px, 3vw, 20px)',
 		borderRadius: '16px',
 		background: 'rgba(255, 255, 255, 0.2)',
 		backdropFilter: 'blur(10px)',
@@ -114,7 +179,7 @@ function Dashboard() {
 		transition: 'all 0.3s ease',
 		boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
 		textShadow: '1px 1px 2px rgba(0, 0, 0, 0.15)',
-		transform: 'translateX(0)',
+		transform: 'translateX(0)'
 	};
 
 	const sidebarItemHover = {
@@ -124,61 +189,73 @@ function Dashboard() {
 		borderColor: 'rgba(255, 255, 255, 0.5)',
 	};
 
-	const mainContentStyle = {
+	const mainContentStyle: React.CSSProperties = {
 		flex: 1,
-		padding: '60px',
+		padding: 'clamp(20px, 5vw, 60px)',
 		display: 'flex',
-		flexDirection: 'column' as const,
+		flexDirection: 'column',
 		alignItems: 'center',
 		justifyContent: 'center',
-		textAlign: 'center' as const,
-		position: 'relative' as const,
+		textAlign: 'center',
+		position: 'relative',
 		zIndex: 10,
+		overflowY: 'auto',
 	};
 
-	const contentCardStyle = {
+	const contentCardStyle: React.CSSProperties = {
 		backdropFilter: 'blur(20px)',
 		background: 'rgba(255, 255, 255, 0.3)',
 		border: '2px solid rgba(255, 255, 255, 0.4)',
-		borderRadius: '32px',
-		padding: '60px 80px',
+		borderRadius: 'clamp(16px, 4vw, 32px)',
+		padding: 'clamp(30px, 6vw, 60px) clamp(20px, 6vw, 80px)',
 		boxShadow: '0 8px 32px rgba(0, 0, 0, 0.15)',
+		maxWidth: '600px',
+		width: '100%',
+		boxSizing: 'border-box',
 	};
 
-	const headerStyle = {
-		fontSize: '42px',
+	const headerStyle: React.CSSProperties = {
+		fontSize: 'clamp(24px, 5vw, 42px)',
 		fontWeight: 800,
 		color: 'white',
-		marginBottom: '16px',
+		marginBottom: 'clamp(12px, 2vw, 16px)',
 		textShadow: '2px 2px 8px rgba(0, 0, 0, 0.2)',
+		wordBreak: 'break-word',
 	};
 
-	const subTextStyle = {
+	const subTextStyle: React.CSSProperties = {
 		color: 'rgba(255, 255, 255, 0.95)',
-		marginBottom: '40px',
-		fontSize: '20px',
+		marginBottom: 'clamp(24px, 4vw, 40px)',
+		fontSize: 'clamp(16px, 3vw, 20px)',
 		fontWeight: 500,
 		textShadow: '1px 1px 3px rgba(0, 0, 0, 0.15)',
 	};
 
-	const buttonStyle = {
-		background: 'linear-gradient(135deg, rgba(253, 184, 19, 0.9), rgba(255, 143, 199, 0.9))',
-		backdropFilter: 'blur(10px)',
+	const buttonStyle: React.CSSProperties = {
+		background: 'linear-gradient(135deg, #FF6B6B 0%, #FF8FC7 100%)',
 		color: 'white',
-		border: '3px solid rgba(255, 255, 255, 0.5)',
-		padding: '18px 48px',
-		borderRadius: '20px',
+		border: 'none',
+		padding: 'clamp(14px, 3vw, 18px) clamp(32px, 6vw, 48px)',
+		borderRadius: '16px',
 		cursor: 'pointer',
 		fontWeight: 700,
-		fontSize: '18px',
-		boxShadow: '0 8px 24px rgba(0, 0, 0, 0.2)',
+		fontSize: 'clamp(16px, 3vw, 18px)',
+		boxShadow: '0 8px 24px rgba(255, 107, 107, 0.3)',
 		transition: 'all 0.3s ease',
 		textShadow: '1px 1px 2px rgba(0, 0, 0, 0.2)',
+		width: '100%',
+		maxWidth: '300px',
 	};
 
 	return (
 		<>
 			<style>{`
+				* {
+					margin: 0;
+					padding: 0;
+					box-sizing: border-box;
+				}
+				
 				@keyframes gradientShift {
 					0% { background-position: 0% 50%; }
 					50% { background-position: 100% 50%; }
@@ -188,92 +265,206 @@ function Dashboard() {
 					from { transform: translate(-50%, -50%) rotate(0deg); }
 					to { transform: translate(-50%, -50%) rotate(360deg); }
 				}
+				
+				@media (max-width: 768px) {
+					.mobile-header {
+						display: flex !important;
+					}
+					.desktop-sidebar {
+						display: none !important;
+					}
+				}
 			`}</style>
 			<div style={layoutStyle}>
 				<div style={backgroundOverlay1Style}></div>
 				<div style={backgroundOverlay2Style}></div>
 
-				{/* Sidebar */}
-				<div style={sidebarStyle}>
-					<PageTitle />
-					<h2 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '40px', color: 'white', textShadow: '2px 2px 4px rgba(0, 0, 0, 0.2)', padding: '0 12px' }}>
-						📊 Dashboard
-					</h2>
-					<div
-						style={sidebarItem}
-						onMouseEnter={(e) => Object.assign(e.currentTarget.style, sidebarItemHover)}
-						onMouseLeave={(e) => Object.assign(e.currentTarget.style, sidebarItem)}
+				{/* Mobile Header */}
+				<div style={mobileHeaderStyle} className="mobile-header">
+					<span 
+						style={hamburgerStyle} 
+						onClick={(e) => {
+							e.stopPropagation();
+							setSidebarOpen(true);
+						}}
 					>
-						🏠 Home
-					</div>
-					<div
-						style={sidebarItem}
-						onMouseEnter={(e) => Object.assign(e.currentTarget.style, sidebarItemHover)}
-						onMouseLeave={(e) => Object.assign(e.currentTarget.style, sidebarItem)}
-					>
-						👤 Profile
-					</div>
-					<div
-						style={sidebarItem}
-						onMouseEnter={(e) => Object.assign(e.currentTarget.style, sidebarItemHover)}
-						onMouseLeave={(e) => Object.assign(e.currentTarget.style, sidebarItem)}
-					>
-						🎮 Saved Games
-					</div>
-					<div
-						style={sidebarItem}
-						onMouseEnter={(e) => Object.assign(e.currentTarget.style, sidebarItemHover)}
-						onMouseLeave={(e) => Object.assign(e.currentTarget.style, sidebarItem)}
-					>
-						⚙️ Settings
-					</div>
-					<div
+						☰
+					</span>
+					<img 
+						src="/logo2.png" 
+						alt="PoosdBoard Logo"
 						style={{
-							...sidebarItem,
-							background: 'rgba(255, 107, 107, 0.25)',
-							borderColor: 'rgba(255, 107, 107, 0.5)',
-							marginTop: 'auto',
+							height: '40px',
+							width: 'auto',
 						}}
-						onMouseEnter={(e) => {
-							e.currentTarget.style.background = 'rgba(255, 107, 107, 0.4)';
-							e.currentTarget.style.borderColor = 'rgba(255, 107, 107, 0.7)';
-							e.currentTarget.style.transform = 'translateX(8px)';
-						}}
-						onMouseLeave={(e) => {
-							e.currentTarget.style.background = 'rgba(255, 107, 107, 0.25)';
-							e.currentTarget.style.borderColor = 'rgba(255, 107, 107, 0.5)';
-							e.currentTarget.style.transform = 'translateX(0)';
-						}}
-						onClick={handleLogout}
-					>
-						🚪 Log Out
-					</div>
+					/>
+					<div style={{ width: '28px' }}></div>
 				</div>
 
-				{/* Main content */}
-				<div style={mainContentStyle}>
-					<div style={contentCardStyle}>
-						<h1 style={headerStyle}>Welcome back, {name}! 🎉</h1>
-						<p style={subTextStyle}>Ready to play? Start a new game below!</p>
+				{/* Overlay for mobile */}
+				<div 
+					style={overlayStyle} 
+					onClick={(e) => {
+						e.stopPropagation();
+						setSidebarOpen(false);
+					}}
+				></div>
 
-						<button
-							style={buttonStyle}
+				<div style={contentWrapperStyle}>
+					{/* Desktop Sidebar - Always visible on desktop */}
+					<div style={sidebarStyle} className="desktop-sidebar">
+						<div style={{ display: 'flex', justifyContent: 'center', marginBottom: '32px' }}>
+							<img 
+								src="/logo2.png" 
+								alt="PoosdBoard Logo"
+								style={{
+									width: '100%',
+									maxWidth: '220px',
+									height: 'auto',
+									filter: 'drop-shadow(0 2px 8px rgba(0, 0, 0, 0.2))',
+								}}
+							/>
+						</div>
+						<div
+							style={sidebarItem}
+							onMouseEnter={(e) => Object.assign(e.currentTarget.style, sidebarItemHover)}
+							onMouseLeave={(e) => Object.assign(e.currentTarget.style, sidebarItem)}
+						>
+							🏠 Home
+						</div>
+						<div
+							style={sidebarItem}
+							onMouseEnter={(e) => Object.assign(e.currentTarget.style, sidebarItemHover)}
+							onMouseLeave={(e) => Object.assign(e.currentTarget.style, sidebarItem)}
+						>
+							👤 Profile
+						</div>
+						<div
+							style={sidebarItem}
+							onMouseEnter={(e) => Object.assign(e.currentTarget.style, sidebarItemHover)}
+							onMouseLeave={(e) => Object.assign(e.currentTarget.style, sidebarItem)}
+						>
+							🎮 Saved Games
+						</div>
+						<div
+							style={sidebarItem}
+							onMouseEnter={(e) => Object.assign(e.currentTarget.style, sidebarItemHover)}
+							onMouseLeave={(e) => Object.assign(e.currentTarget.style, sidebarItem)}
+						>
+							⚙️ Settings
+						</div>
+						<div
+							style={{
+								...sidebarItem,
+								background: 'rgba(255, 107, 107, 0.25)',
+								borderColor: 'rgba(255, 107, 107, 0.5)',
+								marginTop: 'auto',
+							}}
 							onMouseEnter={(e) => {
-								(e.target as HTMLElement).style.background = 'linear-gradient(135deg, rgba(253, 184, 19, 1), rgba(255, 107, 107, 0.9))';
-								(e.target as HTMLElement).style.transform = 'translateY(-4px) scale(1.05)';
-								(e.target as HTMLElement).style.boxShadow = '0 12px 32px rgba(0, 0, 0, 0.25)';
-								(e.target as HTMLElement).style.borderColor = 'rgba(255, 255, 255, 0.7)';
+								e.currentTarget.style.background = 'rgba(255, 107, 107, 0.4)';
+								e.currentTarget.style.borderColor = 'rgba(255, 107, 107, 0.7)';
+								e.currentTarget.style.transform = 'translateX(8px)';
 							}}
 							onMouseLeave={(e) => {
-								(e.target as HTMLElement).style.background = 'linear-gradient(135deg, rgba(253, 184, 19, 0.9), rgba(255, 143, 199, 0.9))';
-								(e.target as HTMLElement).style.transform = 'translateY(0) scale(1)';
-								(e.target as HTMLElement).style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.2)';
-								(e.target as HTMLElement).style.borderColor = 'rgba(255, 255, 255, 0.5)';
+								e.currentTarget.style.background = 'rgba(255, 107, 107, 0.25)';
+								e.currentTarget.style.borderColor = 'rgba(255, 107, 107, 0.5)';
+								e.currentTarget.style.transform = 'translateX(0)';
 							}}
-							onClick={handleStartGame}
+							onClick={handleLogout}
 						>
-							🎲 Start New Game
-						</button>
+							🚪 Log Out
+						</div>
+					</div>
+
+					{/* Mobile Sidebar - Slides in from left on mobile */}
+					<div style={mobileSidebarStyle}>
+						<div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: '32px' }}>
+							<span 
+								style={{ fontSize: '28px', cursor: 'pointer', color: 'white', textShadow: '1px 1px 2px rgba(0, 0, 0, 0.2)' }} 
+								onClick={(e) => {
+									e.stopPropagation();
+									setSidebarOpen(false);
+								}}
+							>
+								✕
+							</span>
+						</div>
+						<div
+							style={sidebarItem}
+							onClick={(e) => {
+								e.stopPropagation();
+								setSidebarOpen(false);
+							}}
+						>
+							🏠 Home
+						</div>
+						<div
+							style={sidebarItem}
+							onClick={(e) => {
+								e.stopPropagation();
+								setSidebarOpen(false);
+							}}
+						>
+							👤 Profile
+						</div>
+						<div
+							style={sidebarItem}
+							onClick={(e) => {
+								e.stopPropagation();
+								setSidebarOpen(false);
+							}}
+						>
+							🎮 Saved Games
+						</div>
+						<div
+							style={sidebarItem}
+							onClick={(e) => {
+								e.stopPropagation();
+								setSidebarOpen(false);
+							}}
+						>
+							⚙️ Settings
+						</div>
+						<div
+							style={{
+								...sidebarItem,
+								background: 'rgba(255, 107, 107, 0.25)',
+								borderColor: 'rgba(255, 107, 107, 0.5)',
+								marginTop: 'auto',
+							}}
+							onClick={(e) => {
+								e.stopPropagation();
+								handleLogout();
+							}}
+						>
+							🚪 Log Out
+						</div>
+					</div>
+
+					{/* Main content */}
+					<div style={mainContentStyle}>
+						<div style={contentCardStyle}>
+							<h1 style={headerStyle}>Welcome back, {name}! 🎉</h1>
+							<p style={subTextStyle}>Ready to play? Start a new game below!</p>
+
+							<button
+								style={buttonStyle}
+								onMouseEnter={(e) => {
+									(e.target as HTMLElement).style.transform = 'translateY(-4px) scale(1.02)';
+									(e.target as HTMLElement).style.boxShadow = '0 12px 32px rgba(255, 107, 107, 0.4)';
+								}}
+								onMouseLeave={(e) => {
+									(e.target as HTMLElement).style.transform = 'translateY(0) scale(1)';
+									(e.target as HTMLElement).style.boxShadow = '0 8px 24px rgba(255, 107, 107, 0.3)';
+								}}
+								onClick={(e) => {
+									e.stopPropagation();
+									handleStartGame();
+								}}
+							>
+								🎲 Start New Game
+							</button>
+						</div>
 					</div>
 				</div>
 			</div>

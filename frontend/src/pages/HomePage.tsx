@@ -6,11 +6,15 @@ function HomePage() {
 
     const layoutStyle: React.CSSProperties = {
         minHeight: '100vh',
+        width: '100%',
+        margin: 0,
+        padding: 0,
         display: 'flex',
         flexDirection: 'column',
         fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
         background: 'linear-gradient(135deg, #FDB813 0%, #FF6B6B 20%, #FF8FC7 40%, #4ECDC4 60%, #45B7D1 80%, #FDB813 100%)',
         backgroundSize: '400% 400%',
+        backgroundAttachment: 'fixed',
         animation: 'gradientShift 15s ease infinite',
         position: 'relative',
         overflow: 'hidden',
@@ -20,8 +24,8 @@ function HomePage() {
         position: 'absolute',
         top: '50%',
         left: '50%',
-        width: '800px',
-        height: '800px',
+        width: '150vw',
+        height: '150vh',
         transform: 'translate(-50%, -50%)',
         background: `conic-gradient(
             from 0deg,
@@ -68,81 +72,71 @@ function HomePage() {
 
     const contentContainerStyle: React.CSSProperties = {
         display: 'flex',
-        gap: '40px',
-        padding: '60px',
+        flexDirection: 'column',
+        gap: 'clamp(20px, 4vw, 40px)',
+        padding: 'clamp(20px, 5vw, 60px)',
         maxWidth: '1400px',
         margin: '0 auto',
         zIndex: 10,
         position: 'relative',
-        alignItems: 'stretch',
+        flex: 1,
+        width: '100%',
+        boxSizing: 'border-box',
     };
 
     const aboutCardStyle: React.CSSProperties = {
-        flex: 1,
         backdropFilter: 'blur(20px)',
-        background: 'rgba(255, 255, 255, 0.3)',
-        border: '2px solid rgba(255, 255, 255, 0.4)',
-        borderRadius: '32px',
-        padding: '50px',
+        background: 'rgba(255, 255, 255, 0.75)',
+        border: '2px solid rgba(255, 255, 255, 0.5)',
+        borderRadius: 'clamp(16px, 4vw, 32px)',
+        padding: 'clamp(24px, 5vw, 50px)',
         boxShadow: '0 8px 32px rgba(0, 0, 0, 0.15)',
         zIndex: 10,
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center',
     };
 
     const aboutTitleStyle: React.CSSProperties = {
-        fontSize: '36px',
+        fontSize: 'clamp(24px, 5vw, 36px)',
         fontWeight: 800,
-        color: 'white',
-        marginBottom: '24px',
-        textShadow: '2px 2px 4px rgba(0, 0, 0, 0.2)',
+        color: '#374151',
+        marginBottom: 'clamp(16px, 3vw, 24px)',
+        textShadow: '1px 1px 2px rgba(0, 0, 0, 0.1)',
     };
 
     const aboutTextStyle: React.CSSProperties = {
-        fontSize: '18px',
-        color: 'rgba(255, 255, 255, 0.95)',
+        fontSize: 'clamp(14px, 2.5vw, 18px)',
+        color: '#4b5563',
         lineHeight: '1.8',
-        textShadow: '1px 1px 2px rgba(0, 0, 0, 0.15)',
         fontWeight: 500,
-    };
-
-    const rightColumnStyle: React.CSSProperties = {
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '40px',
     };
 
     const sectionCardStyle: React.CSSProperties = {
         backdropFilter: 'blur(20px)',
-        background: 'rgba(255, 255, 255, 0.3)',
-        border: '2px solid rgba(255, 255, 255, 0.4)',
-        borderRadius: '32px',
-        padding: '40px',
+        background: 'rgba(255, 255, 255, 0.75)',
+        border: '2px solid rgba(255, 255, 255, 0.5)',
+        borderRadius: 'clamp(16px, 4vw, 32px)',
+        padding: 'clamp(24px, 5vw, 40px)',
         boxShadow: '0 8px 32px rgba(0, 0, 0, 0.15)',
         textAlign: 'center',
     };
 
     const sectionTitleStyle: React.CSSProperties = {
-        fontSize: '32px',
+        fontSize: 'clamp(22px, 4.5vw, 32px)',
         fontWeight: 800,
-        color: 'white',
-        marginBottom: '24px',
-        textShadow: '2px 2px 4px rgba(0, 0, 0, 0.2)',
+        color: '#374151',
+        marginBottom: 'clamp(16px, 3vw, 24px)',
+        textShadow: '1px 1px 2px rgba(0, 0, 0, 0.1)',
     };
 
     const buttonStyle: React.CSSProperties = {
-        background: 'linear-gradient(135deg, rgba(253, 184, 19, 0.9), rgba(255, 143, 199, 0.9))',
-        backdropFilter: 'blur(10px)',
+        background: 'linear-gradient(135deg, #5555ff 0%, #aa00ff 100%)',
         color: 'white',
-        border: '3px solid rgba(255, 255, 255, 0.5)',
-        padding: '20px 40px',
-        borderRadius: '20px',
+        border: 'none',
+        padding: 'clamp(14px, 3vw, 20px) clamp(24px, 5vw, 40px)',
+        borderRadius: '16px',
         cursor: 'pointer',
         fontWeight: 700,
-        fontSize: '20px',
-        boxShadow: '0 8px 24px rgba(0, 0, 0, 0.2)',
+        fontSize: 'clamp(16px, 2.5vw, 20px)',
+        boxShadow: '0 8px 24px rgba(85, 85, 255, 0.3)',
         transition: 'all 0.3s ease',
         textShadow: '1px 1px 2px rgba(0, 0, 0, 0.2)',
         width: '100%',
@@ -151,12 +145,14 @@ function HomePage() {
 
     const smallButtonStyle: React.CSSProperties = {
         ...buttonStyle,
-        fontSize: '16px',
-        padding: '14px 28px',
+        fontSize: 'clamp(14px, 2.5vw, 16px)',
+        padding: 'clamp(12px, 2.5vw, 14px) clamp(20px, 4vw, 28px)',
+        marginBottom: 0,
     };
 
     const buttonContainerStyle: React.CSSProperties = {
         display: 'flex',
+        flexDirection: 'column',
         gap: '12px',
         marginTop: '12px',
     };
@@ -164,6 +160,17 @@ function HomePage() {
     return (
         <>
             <style>{`
+                * {
+                    margin: 0; 
+                    padding: 0; 
+                    box-sizing: border-box; 
+                }
+                body, html, #root {
+                    margin: 0;
+                    padding: 0;
+                    width: 100%; 
+                    overflow-x: hidden;
+                }
                 @keyframes gradientShift {
                     0% { background-position: 0% 50%; }
                     50% { background-position: 100% 50%; }
@@ -173,6 +180,26 @@ function HomePage() {
                     from { transform: translate(-50%, -50%) rotate(0deg); }
                     to { transform: translate(-50%, -50%) rotate(360deg); }
                 }
+                
+                /* Desktop layout - side by side */
+                @media (min-width: 768px) {
+                    .content-container {
+                        flex-direction: row !important;
+                        align-items: stretch !important;
+                    }
+                    .about-card {
+                        flex: 1 !important;
+                    }
+                    .right-column {
+                        flex: 1 !important;
+                        display: flex !important;
+                        flex-direction: column !important;
+                        gap: 40px !important;
+                    }
+                    .button-container {
+                        flex-direction: row !important;
+                    }
+                }
             `}</style>
 
             <div style={layoutStyle}>
@@ -181,60 +208,68 @@ function HomePage() {
 
                 <PageTitle />
 
-                <div style={contentContainerStyle}>
+                <div style={contentContainerStyle} className="content-container">
                     {/* Left Side - About Section */}
-                    <div style={aboutCardStyle}>
+                    <div style={aboutCardStyle} className="about-card">
                         <h2 style={aboutTitleStyle}>About POOSD Board</h2>
                         <p style={aboutTextStyle}>
                             Welcome to POOSD Board, your ultimate interactive bingo experience! 
                             Whether you're hosting a game night with friends or joining a fun 
                             community event, we've got you covered.
                         </p>
-                        <p style={{...aboutTextStyle, marginTop: '16px'}}>
-                            <strong style={{fontSize: '20px', display: 'block', marginBottom: '8px'}}>
+                        <p style={{...aboutTextStyle, marginTop: 'clamp(12px, 2vw, 16px)'}}>
+                            <strong style={{
+                                fontSize: 'clamp(16px, 3vw, 20px)', 
+                                display: 'block', 
+                                marginBottom: '8px',
+                                color: '#1f2937',
+                            }}>
                                 🎮 For Players:
                             </strong>
                             Jump right into the action! No sign-up required. Just enter a game 
                             code and start playing instantly.
                         </p>
-                        <p style={{...aboutTextStyle, marginTop: '16px'}}>
-                            <strong style={{fontSize: '20px', display: 'block', marginBottom: '8px'}}>
+                        <p style={{...aboutTextStyle, marginTop: 'clamp(12px, 2vw, 16px)'}}>
+                            <strong style={{
+                                fontSize: 'clamp(16px, 3vw, 20px)', 
+                                display: 'block', 
+                                marginBottom: '8px',
+                                color: '#1f2937',
+                            }}>
                                 🎲 For Hosts:
                             </strong>
                             Create custom bingo boards, manage games in real-time, and bring 
                             people together for unforgettable moments.
+
+                            <br/> <br/> <p style={{fontStyle: 'italic', fontSize: 'clamp(8px, 2vw, 10px)'}}> Made with ❤️ by Process of Object-Oriented Software Development Team 12. </p>
                         </p>
                     </div>
 
                     {/* Right Side - Action Sections */}
-                    <div style={rightColumnStyle}>
+                    <div className="right-column" style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 'clamp(20px, 4vw, 40px)',
+                    }}>
                         {/* Play Section */}
                         <div style={sectionCardStyle}>
                             <h3 style={sectionTitleStyle}>🎮 Play</h3>
                             <p style={{
                                 ...aboutTextStyle,
                                 marginBottom: '20px',
-                                fontSize: '16px',
+                                fontSize: 'clamp(14px, 2.5vw, 16px)',
                             }}>
                                 No sign-up required!
                             </p>
                             <button
                                 style={buttonStyle}
                                 onMouseEnter={(e) => {
-                                    (e.currentTarget as HTMLElement).style.background = 
-                                        'linear-gradient(135deg, rgba(253,184,19,1), rgba(255,107,107,0.9))';
-                                    (e.currentTarget as HTMLElement).style.transform = 
-                                        'translateY(-3px) scale(1.03)';
-                                    (e.currentTarget as HTMLElement).style.boxShadow = 
-                                        '0 12px 32px rgba(0, 0, 0, 0.25)';
+                                    e.currentTarget.style.transform = 'translateY(-3px) scale(1.02)';
+                                    e.currentTarget.style.boxShadow = '0 12px 32px rgba(85, 85, 255, 0.4)';
                                 }}
                                 onMouseLeave={(e) => {
-                                    (e.currentTarget as HTMLElement).style.background = 
-                                        'linear-gradient(135deg, rgba(253,184,19,0.9), rgba(255,143,199,0.9))';
-                                    (e.currentTarget as HTMLElement).style.transform = 
-                                        'translateY(0) scale(1)';
-                                    (e.currentTarget as HTMLElement).style.boxShadow = 
-                                        '0 8px 24px rgba(0, 0, 0, 0.2)';
+                                    e.currentTarget.style.transform = 'translateY(0) scale(1)';
+                                    e.currentTarget.style.boxShadow = '0 8px 24px rgba(85, 85, 255, 0.3)';
                                 }}
                                 onClick={() => navigate('/play')}
                             >
@@ -248,28 +283,20 @@ function HomePage() {
                             <p style={{
                                 ...aboutTextStyle,
                                 marginBottom: '20px',
-                                fontSize: '16px',
+                                fontSize: 'clamp(14px, 2.5vw, 16px)',
                             }}>
                                 Create and manage bingo games
                             </p>
-                            <div style={buttonContainerStyle}>
+                            <div style={buttonContainerStyle} className="button-container">
                                 <button
                                     style={{...smallButtonStyle, flex: 1}}
                                     onMouseEnter={(e) => {
-                                        (e.currentTarget as HTMLElement).style.background = 
-                                            'linear-gradient(135deg, rgba(253,184,19,1), rgba(255,107,107,0.9))';
-                                        (e.currentTarget as HTMLElement).style.transform = 
-                                            'translateY(-3px) scale(1.03)';
-                                        (e.currentTarget as HTMLElement).style.boxShadow = 
-                                            '0 12px 32px rgba(0, 0, 0, 0.25)';
+                                        e.currentTarget.style.transform = 'translateY(-3px) scale(1.02)';
+                                        e.currentTarget.style.boxShadow = '0 12px 32px rgba(85, 85, 255, 0.4)';
                                     }}
                                     onMouseLeave={(e) => {
-                                        (e.currentTarget as HTMLElement).style.background = 
-                                            'linear-gradient(135deg, rgba(253,184,19,0.9), rgba(255,143,199,0.9))';
-                                        (e.currentTarget as HTMLElement).style.transform = 
-                                            'translateY(0) scale(1)';
-                                        (e.currentTarget as HTMLElement).style.boxShadow = 
-                                            '0 8px 24px rgba(0, 0, 0, 0.2)';
+                                        e.currentTarget.style.transform = 'translateY(0) scale(1)';
+                                        e.currentTarget.style.boxShadow = '0 8px 24px rgba(85, 85, 255, 0.3)';
                                     }}
                                     onClick={() => navigate('/login')}
                                 >
@@ -278,20 +305,12 @@ function HomePage() {
                                 <button
                                     style={{...smallButtonStyle, flex: 1}}
                                     onMouseEnter={(e) => {
-                                        (e.currentTarget as HTMLElement).style.background = 
-                                            'linear-gradient(135deg, rgba(253,184,19,1), rgba(255,107,107,0.9))';
-                                        (e.currentTarget as HTMLElement).style.transform = 
-                                            'translateY(-3px) scale(1.03)';
-                                        (e.currentTarget as HTMLElement).style.boxShadow = 
-                                            '0 12px 32px rgba(0, 0, 0, 0.25)';
+                                        e.currentTarget.style.transform = 'translateY(-3px) scale(1.02)';
+                                        e.currentTarget.style.boxShadow = '0 12px 32px rgba(85, 85, 255, 0.4)';
                                     }}
                                     onMouseLeave={(e) => {
-                                        (e.currentTarget as HTMLElement).style.background = 
-                                            'linear-gradient(135deg, rgba(253,184,19,0.9), rgba(255,143,199,0.9))';
-                                        (e.currentTarget as HTMLElement).style.transform = 
-                                            'translateY(0) scale(1)';
-                                        (e.currentTarget as HTMLElement).style.boxShadow = 
-                                            '0 8px 24px rgba(0, 0, 0, 0.2)';
+                                        e.currentTarget.style.transform = 'translateY(0) scale(1)';
+                                        e.currentTarget.style.boxShadow = '0 8px 24px rgba(85, 85, 255, 0.3)';
                                     }}
                                     onClick={() => navigate('/signup')}
                                 >
