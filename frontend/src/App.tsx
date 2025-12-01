@@ -9,6 +9,9 @@ import HomePage from './pages/HomePage.tsx';
 import BingoHostPage from './pages/BingoHostPage.tsx';
 import GamePINPage from './pages/GamePINPage.tsx';
 import ErrorPage from './pages/ErrorPage.tsx';
+import PasswordResetRequestPage from './pages/PasswordResetRequestPage.tsx';
+import PasswordResetVerifyPage from './pages/PasswordResetVerifyPage.tsx';
+import PasswordResetChangePage from './pages/PasswordResetChangePage.tsx';
 
 function App() {
   return (
@@ -26,6 +29,9 @@ function App() {
         <Route path="/host/:gameId" element={<BingoHostPage />} />
         <Route path="/game-pin" element={<GamePINPage />} />
         <Route path="/error" element={<ErrorPage />} />
+        <Route path="/forgot-password" element={<PasswordResetRequestPage />} />
+        <Route path="/reset-verify" element={<PasswordResetVerifyPage />} />
+        <Route path="/reset-change" element={<PasswordResetChangePage />} />
       </Routes>
     </BrowserRouter>
   );

@@ -49,6 +49,14 @@ function Signup({
     })
       .then(async (res) => {
         const data = await res.json();
+
+        // If backend says the account exists but needs verification, show the code screen
+        if (data.needsEmailVerification) {
+          setVerificationEmail(email);
+          setShowEmailVerification(true);
+          return;
+        }
+
         if (data.error && data.error !== "Signed up" && !data.error.includes("Signed up")) {
           throw new Error(data.error);
         }

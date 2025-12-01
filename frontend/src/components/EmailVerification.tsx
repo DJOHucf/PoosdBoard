@@ -3,10 +3,9 @@ import React, { useState } from "react";
 interface EmailVerificationProps {
   email: string;
   onVerificationComplete: () => void;
-  onResendCode?: () => void;
 }
 
-function EmailVerification({ email, onVerificationComplete, onResendCode }: EmailVerificationProps) {
+function EmailVerification({ email, onVerificationComplete }: EmailVerificationProps) {
   const [verificationCode, setVerificationCode] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);

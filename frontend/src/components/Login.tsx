@@ -1,3 +1,7 @@
+import React, { useState } from "react";
+import EmailVerification from "./EmailVerification";
+import TwoFactorVerification from "./TwoFactorVerification";
+
 function Login({ onNavigateToSignup }: { onNavigateToSignup?: () => void }) {
 	// Check if user is already logged in
 	const token = localStorage.getItem('token');
@@ -6,20 +10,27 @@ function Login({ onNavigateToSignup }: { onNavigateToSignup?: () => void }) {
 		return null;
 	}
 
+	const [showEmailVerification, setShowEmailVerification] = useState(false);
+	const [show2FA, setShow2FA] = useState(false);
+	const [verificationEmail, setVerificationEmail] = useState('');
+	const [isLoading, setIsLoading] = useState(false);
+	const [resultMessage, setResultMessage] = useState<{ text: string; color: string }>({
+		text: '',
+		color: '#4b5563',
+	});
+
 	function doLogin(event: any): void {
 		event.preventDefault();
 
 		const login = (document.getElementById('loginName') as HTMLInputElement).value;
 		const password = (document.getElementById('loginPassword') as HTMLInputElement).value;
-		const resultDiv = document.getElementById('loginResult');
-		
+
 		if (!login || !password) {
-			if (resultDiv) {
-				resultDiv.style.color = '#ef4444';
-				resultDiv.textContent = 'Please enter your username or email and password.';
-			}
+			setResultMessage({ text: 'Please enter your username or email and password.', color: '#ef4444' });
 			return;
 		}
+
+		setIsLoading(true);
 
 		fetch('https://poosdboard.com/api/login', {
 			method: 'POST',
@@ -30,13 +41,25 @@ function Login({ onNavigateToSignup }: { onNavigateToSignup?: () => void }) {
 				const data = await response.json();
 
 				if (data.error && data.error !== '') {
+					// Email needs verification before allowing login
+					if (data.needsEmailVerification && data.email) {
+						setVerificationEmail(data.email);
+						setShowEmailVerification(true);
+						setResultMessage({ text: 'Please verify your email to continue.', color: '#ef4444' });
+						return;
+					}
 					throw new Error(data.error);
 				}
 
-				if (resultDiv) {
-					resultDiv.style.color = '#16a34a';
-					resultDiv.textContent = 'Login successful!';
+				// If backend requires 2FA, show code entry UI
+				if (data.requires2FA && data.email) {
+					setVerificationEmail(data.email);
+					setShow2FA(true);
+					setResultMessage({ text: data.message || 'Verification code sent to your email.', color: '#16a34a' });
+					return;
 				}
+
+				setResultMessage({ text: 'Login successful!', color: '#16a34a' });
 
 				localStorage.setItem('token', data.auth);
 				localStorage.setItem('name', data.name);
@@ -45,12 +68,28 @@ function Login({ onNavigateToSignup }: { onNavigateToSignup?: () => void }) {
 			})
 			.catch((error) => {
 				console.error('Login failed:', error);
-				if (resultDiv) {
-					resultDiv.style.color = '#ef4444';
-					resultDiv.textContent = error.message || 'Login failed.';
-				}
+				setResultMessage({ text: error.message || 'Login failed.', color: '#ef4444' });
+			})
+			.finally(() => {
+				setIsLoading(false);
 			});
 	}
+
+	const handle2FASuccess = (token: string, name: string) => {
+		localStorage.setItem('token', token);
+		localStorage.setItem('name', name);
+		window.location.href = '/dashboard';
+	};
+
+	const handleEmailVerificationComplete = () => {
+		setShowEmailVerification(false);
+		setResultMessage({ text: 'Email verified! Please log in to continue.', color: '#16a34a' });
+	};
+
+	const handle2FACancel = () => {
+		setShow2FA(false);
+		setResultMessage({ text: 'Login cancelled. Please try again.', color: '#ef4444' });
+	};
 
 	const layoutStyle: React.CSSProperties = {
 		width: '100%',
@@ -141,12 +180,12 @@ function Login({ onNavigateToSignup }: { onNavigateToSignup?: () => void }) {
 		transition: "color 0.3s ease",
 	};
 
-	const loginLinkStyle = {
-		textAlign: "center" as const,
-		marginTop: "clamp(16px, 3vw, 20px)",
-		fontSize: "clamp(13px, 2.5vw, 14px)",
-		color: "#4b5563",
-	};
+const loginLinkStyle = {
+	textAlign: "center" as const,
+	marginTop: "clamp(16px, 3vw, 20px)",
+	fontSize: "clamp(13px, 2.5vw, 14px)",
+	color: "#4b5563",
+};
   
 	const resultStyle: React.CSSProperties = {
 		marginTop: "16px",
@@ -156,10 +195,34 @@ function Login({ onNavigateToSignup }: { onNavigateToSignup?: () => void }) {
 		minHeight: "20px",
 	};
   
-	const handleSignupClick = () => {
-		if (onNavigateToSignup) onNavigateToSignup();
-		else window.location.href = '/signup';
+const handleSignupClick = () => {
+	if (onNavigateToSignup) onNavigateToSignup();
+	else window.location.href = '/signup';
+};
+
+	const handleForgotPasswordClick = () => {
+		window.location.href = '/forgot-password';
 	};
+
+	// Swap to verification UI when needed
+	if (showEmailVerification) {
+		return (
+			<EmailVerification
+				email={verificationEmail}
+				onVerificationComplete={handleEmailVerificationComplete}
+			/>
+		);
+	}
+
+	if (show2FA) {
+		return (
+			<TwoFactorVerification
+				email={verificationEmail}
+				onVerificationSuccess={handle2FASuccess}
+				onCancel={handle2FACancel}
+			/>
+		);
+	}
 
 	return (
 		<>
@@ -211,6 +274,7 @@ function Login({ onNavigateToSignup }: { onNavigateToSignup?: () => void }) {
 						<button
 							type="submit"
 							style={buttonStyle}
+							disabled={isLoading}
 							onMouseEnter={(e) => {
 								(e.target as HTMLElement).style.transform = "translateY(-3px) scale(1.02)";
 								(e.target as HTMLElement).style.boxShadow = "0 8px 24px rgba(255, 107, 107, 0.4)";
@@ -220,11 +284,29 @@ function Login({ onNavigateToSignup }: { onNavigateToSignup?: () => void }) {
 								(e.target as HTMLElement).style.boxShadow = "0 6px 20px rgba(255, 107, 107, 0.3)";
 							}}
 						>
-							Log In
+							{isLoading ? 'Logging in...' : 'Log In'}
 						</button>
+
+						<div style={loginLinkStyle}>
+							Forgot your password?{" "}
+							<span 
+								style={linkStyle} 
+								onClick={handleForgotPasswordClick}
+								onMouseEnter={(e) => {
+									(e.target as HTMLElement).style.color = "#45B7D1";
+								}}
+								onMouseLeave={(e) => {
+									(e.target as HTMLElement).style.color = "#4ECDC4";
+								}}
+							>
+								Reset it here
+							</span>
+						</div>
 					</form>
 
-					<div id="loginResult" style={resultStyle}></div>
+					<div id="loginResult" style={{ ...resultStyle, color: resultMessage.color }}>
+						{resultMessage.text}
+					</div>
 
 					<div style={loginLinkStyle}>
 						New here?{" "}

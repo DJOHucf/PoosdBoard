@@ -9,6 +9,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const readline = require('readline');               // readline for terminal debugging
 const nodemailer = require('nodemailer');
+const sgMail = require('@sendgrid/mail');
 const https = require('https');
 const http = require('http');
 const fs = require('fs');
@@ -18,6 +19,8 @@ require('dotenv').config();
 const MONGO_URL = process.env.MONGODB_URI;
 const JWT_SECRET = process.env.JWT_SECRET;
 const GOOGLE_PASS = process.env.GOOGLE_PASS;
+const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
+const FROM_EMAIL = process.env.FROM_EMAIL || "poosdboardco@gmail.com";
 
 
 // utils 
@@ -78,24 +81,14 @@ const verificationTokens = new Map();
 // Store 2FA tokens temporarily (email: {token, expiry})
 const twoFactorTokens = new Map();
 
+// Store password reset tokens temporarily (email: {token, expiry})
+const passwordResetTokens = new Map();
+
 /*
- *  Setting up Email Transporter
+ *  Email setup (SendGrid)
  */
-const transporter = nodemailer.createTransport({
-	service: "gmail",
-	auth: {
-		user: "dylan.n.thompson@gmail.com",
-		pass: GOOGLE_PASS,
-	},
-});
-console.log("Verifying email transporter...");
-try {
-    if(transporter.verify()) {
-        console.log("EMAIL TRANSPORTER VERIFIED!! YIPPEE!!")
-    }
-} catch (e) {
-    console.log("transporter failed:" + e);
-}
+sgMail.setApiKey(SENDGRID_API_KEY);
+console.log("SendGrid mailer configured");
 
 
 // Helper function to generate 6-digit verification code
@@ -103,31 +96,38 @@ function generateVerificationCode() {
 	return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
+// Fire-and-forget mail sending so API responses return quickly
+function queueMailSend(options) {
+	sgMail
+		.send({ ...options, from: FROM_EMAIL })
+		.catch((err) => console.error("Email send failed:", err));
+}
+
 // Send verification email
 app.post('/api/send-verification', async (req, res, next) => {
 	const { email } = req.body;
 	var error = '';
+	let verificationCode = '';
 
 	console.log("Sending verification email to: " + email);
 
 	try {
 		// Generate 6-digit code
-		const verificationCode = generateVerificationCode();
+		verificationCode = generateVerificationCode();
 
-		// Store token with 15-minute expiry
-		verificationTokens.set(email, {
-			token: verificationCode,
-			expiry: Date.now() + 15 * 60 * 1000 // 15 minutes
-		});
+	// Store token with 15-minute expiry
+	verificationTokens.set(email, {
+		token: verificationCode,
+		expiry: Date.now() + 15 * 60 * 1000 // 15 minutes
+	});
 
-		// Send email
-		const info = await transporter.sendMail({
-			from: 'dylan.n.thompson@gmail.com',
-			to: email,
-			subject: "Verify your PoosdBoard email",
-			text: `Your verification code is: ${verificationCode}\n\nThis code will expire in 15 minutes.`,
-			html: `
-				<div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px;">
+	// Send email in background (fire-and-forget)
+	queueMailSend({
+		to: email,
+		subject: "Verify your PoosdBoard email",
+		text: `Your verification code is: ${verificationCode}\n\nThis code will expire in 15 minutes.`,
+		html: `
+			<div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px;">
 					<h2 style="color: #333;">Welcome to PoosdBoard!</h2>
 					<p>Thank you for signing up. Please use the following verification code to complete your registration:</p>
 					<div style="background-color: #f5f5f5; padding: 15px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; margin: 20px 0;">
@@ -138,8 +138,6 @@ app.post('/api/send-verification', async (req, res, next) => {
 				</div>
 			`,
 		});
-
-		console.log("Verification email sent:", info.messageId);
 	}
 	catch(e) {
 		error = e.toString();
@@ -184,14 +182,145 @@ app.post('/api/verify-email', async (req, res, next) => {
 	res.status(200).json({error: error, verified: error === ''});
 });
 
+// Request password reset: send code if user exists
+app.post('/api/request-password-reset', async (req, res, next) => {
+	const { email } = req.body;
+	let error = '';
+
+	try {
+		const user = await db.collection('users').findOne({ email: email });
+		if (!user) {
+			error = 'No account found with that email';
+		} else {
+			const resetCode = generateVerificationCode();
+			passwordResetTokens.set(email, {
+				token: resetCode,
+				expiry: Date.now() + 15 * 60 * 1000 // 15 minutes
+			});
+
+			queueMailSend({
+				to: email,
+				subject: "Reset your PoosdBoard password",
+				text: `Your password reset code is: ${resetCode}\n\nThis code will expire in 15 minutes.`,
+				html: `
+					<div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px;">
+						<h2 style="color: #333;">Reset your PoosdBoard password</h2>
+						<p>Use the following code to reset your password:</p>
+						<div style="background-color: #f5f5f5; padding: 15px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; margin: 20px 0;">
+							${resetCode}
+						</div>
+						<p style="color: #666;">This code will expire in 15 minutes.</p>
+					</div>
+				`,
+			});
+		}
+	} catch (e) {
+		error = e.toString();
+		console.error("Password reset request error:", error);
+	}
+
+	res.status(200).json({ error, email });
+});
+
+// Verify password reset code
+app.post('/api/verify-password-reset', async (req, res, next) => {
+	const { email, code } = req.body;
+	let error = '';
+
+	try {
+		const stored = passwordResetTokens.get(email);
+		if (!stored) {
+			error = 'No reset code found. Please request a new one.';
+		} else if (Date.now() > stored.expiry) {
+			passwordResetTokens.delete(email);
+			error = 'Reset code expired. Please request a new one.';
+		} else if (stored.token !== code) {
+			error = 'Invalid reset code.';
+		}
+	} catch (e) {
+		error = e.toString();
+		console.error("Password reset verify error:", error);
+	}
+
+	res.status(200).json({ error, verified: error === '' });
+});
+
+// Complete password reset
+app.post('/api/reset-password', async (req, res, next) => {
+	const { email, code, newPassword } = req.body;
+	let error = '';
+
+	try {
+		const stored = passwordResetTokens.get(email);
+		if (!stored) {
+			error = 'No reset code found. Please request a new one.';
+		} else if (Date.now() > stored.expiry) {
+			passwordResetTokens.delete(email);
+			error = 'Reset code expired. Please request a new one.';
+		} else if (stored.token !== code) {
+			error = 'Invalid reset code.';
+		} else {
+			const hashedPassword = crypto.createHash('sha256').update(newPassword).digest('hex');
+			await db.collection('users').updateOne(
+				{ email: email },
+				{ $set: { passwordHash: hashedPassword } }
+			);
+			passwordResetTokens.delete(email);
+			console.log(`Password reset for: ${email}`);
+		}
+	} catch (e) {
+		error = e.toString();
+		console.error("Password reset error:", error);
+	}
+
+	res.status(200).json({ error });
+});
+
 // Signup
 app.post('/api/signup', async (req, res, next) => {
 	const { email, password, name } = req.body;
 	var error = '';
+	let verificationCode = '';
 
 	try {
 		// Check if user already exists
 		const existingUser = await db.collection('users').findOne({ email: email });
+
+		// If user exists but isn't verified, resend a code and prompt for verification
+		if (existingUser && !existingUser.emailVerified) {
+			verificationCode = generateVerificationCode();
+
+			verificationTokens.set(email, {
+				token: verificationCode,
+				expiry: Date.now() + 15 * 60 * 1000
+			});
+
+			// Send email in background (non-blocking)
+			queueMailSend({
+				to: email,
+				subject: "Verify your PoosdBoard email",
+				text: `Your verification code is: ${verificationCode}\n\nThis code will expire in 15 minutes.`,
+				html: `
+					<div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px;">
+						<h2 style="color: #333;">Welcome back to PoosdBoard!</h2>
+						<p>We noticed you already signed up but haven't verified your email yet. Please use this code:</p>
+						<div style="background-color: #f5f5f5; padding: 15px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; margin: 20px 0;">
+							${verificationCode}
+						</div>
+						<p style="color: #666;">This code will expire in 15 minutes.</p>
+					</div>
+				`,
+			});
+
+			res.status(200).json({
+				error: '',
+				needsEmailVerification: true,
+				email: email,
+				message: 'Account exists but is not verified. Sent a new code.',
+				verificationCode: verificationCode
+			});
+			return;
+		}
 
 		if (existingUser) {
 			error = "Email already registered";
@@ -220,32 +349,25 @@ app.post('/api/signup', async (req, res, next) => {
 				expiry: Date.now() + 15 * 60 * 1000
 			});
 
-			// Send verification email
-			try {
-				await transporter.sendMail({
-					from: 'dylan.n.thompson@gmail.com',
-					to: email,
-					subject: "Verify your PoosdBoard email",
-					text: `Your verification code is: ${verificationCode}\n\nThis code will expire in 15 minutes.`,
-					html: `
-						<div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px;">
-							<h2 style="color: #333;">Welcome to PoosdBoard!</h2>
-							<p>Thank you for signing up. Please use the following verification code to complete your registration:</p>
-							<div style="background-color: #f5f5f5; padding: 15px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; margin: 20px 0;">
-								${verificationCode}
-							</div>
-							<p style="color: #666;">This code will expire in 15 minutes.</p>
-							<p style="color: #999; font-size: 12px;">If you didn't request this verification, please ignore this email.</p>
+			// Send verification email in background (non-blocking)
+			queueMailSend({
+				to: email,
+				subject: "Verify your PoosdBoard email",
+				text: `Your verification code is: ${verificationCode}\n\nThis code will expire in 15 minutes.`,
+				html: `
+					<div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px;">
+						<h2 style="color: #333;">Welcome to PoosdBoard!</h2>
+						<p>Thank you for signing up. Please use the following verification code to complete your registration:</p>
+						<div style="background-color: #f5f5f5; padding: 15px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; margin: 20px 0;">
+							${verificationCode}
 						</div>
-					`,
-				});
+						<p style="color: #666;">This code will expire in 15 minutes.</p>
+						<p style="color: #999; font-size: 12px;">If you didn't request this verification, please ignore this email.</p>
+					</div>
+				`,
+			});
 
-				console.log(`Verification email sent to: ${email}`);
-				error = 'Signed up'; // Success message
-			} catch(emailError) {
-				console.error("Error sending verification email:", emailError);
-				error = 'Signed up but email sending failed. Please use resend verification.';
-			}
+			error = 'Signed up'; // Success message
 		}
 	}
 	catch(e) {
@@ -253,7 +375,9 @@ app.post('/api/signup', async (req, res, next) => {
 		else error = e.toString();
 	}
 
-	var ret = {error: error};
+	// Flag when the user should be shown the verification UI
+	const needsVerification = error === 'Signed up' || (error && error.startsWith('Signed up'));
+	var ret = {error: error, needsEmailVerification: needsVerification, email: email};
 	res.status(200).json(ret);
 });
 
@@ -302,39 +426,33 @@ app.post('/api/login', async (req, res, next) => {
 			expiry: Date.now() + 10 * 60 * 1000
 		});
 
-		// Send 2FA email
-		try {
-			await transporter.sendMail({
-				from: 'dylan.n.thompson@gmail.com',
-				to: user.email,
-				subject: "Your PoosdBoard Login Code",
-				text: `Your 2-factor authentication code is: ${twoFactorCode}\n\nThis code will expire in 10 minutes.\n\nIf you didn't attempt to log in, please secure your account.`,
-				html: `
-					<div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px;">
-						<h2 style="color: #333;">Login Verification</h2>
-						<p>A login attempt was made to your PoosdBoard account. Please use the following code to complete your login:</p>
-						<div style="background-color: #f5f5f5; padding: 15px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; margin: 20px 0;">
-							${twoFactorCode}
-						</div>
-						<p style="color: #666;">This code will expire in 10 minutes.</p>
-						<p style="color: #999; font-size: 12px;">If you didn't attempt to log in, please ignore this email and consider changing your password.</p>
+		// Send 2FA email (non-blocking)
+		queueMailSend({
+			to: user.email,
+			subject: "Your PoosdBoard Login Code",
+			text: `Your 2-factor authentication code is: ${twoFactorCode}\n\nThis code will expire in 10 minutes.\n\nIf you didn't attempt to log in, please secure your account.`,
+			html: `
+				<div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px;">
+					<h2 style="color: #333;">Login Verification</h2>
+					<p>A login attempt was made to your PoosdBoard account. Please use the following code to complete your login:</p>
+					<div style="background-color: #f5f5f5; padding: 15px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; margin: 20px 0;">
+						${twoFactorCode}
 					</div>
-				`,
-			});
+					<p style="color: #666;">This code will expire in 10 minutes.</p>
+					<p style="color: #999; font-size: 12px;">If you didn't attempt to log in, please ignore this email and consider changing your password.</p>
+				</div>
+			`,
+		});
 
-			console.log(`2FA code sent to: ${user.email}`);
+		console.log(`2FA code sent to: ${user.email}`);
 
-			res.status(200).json({
-				"error": '',
-				"requires2FA": true,
-				"email": user.email,
-				"message": "Verification code sent to your email"
-			});
-		} catch(emailError) {
-			console.error("Error sending 2FA email:", emailError);
-			error = 'Failed to send verification code. Please try again.';
-			res.status(200).json({"error": error, "requires2FA": false});
-		}
+		res.status(200).json({
+			"error": '',
+			"requires2FA": true,
+			"email": user.email,
+			"message": "Verification code sent to your email"
+		});
+		return;
 	}
 	catch(e) {
 		error = e.toString();
@@ -409,8 +527,8 @@ const server = http.createServer(app);
 // Setup WS server attached to HTTP server
 const wss = new WebSocket.Server({ server });
 
-// Start the server on port 5000
-server.listen(5000, () => {
+// Start the server on port 5000 (IPv4) so nginx can reach it on localhost
+server.listen(5000, '0.0.0.0', () => {
 	console.log('Server listening on port 5000 (HTTP + WebSocket)');
 });
 

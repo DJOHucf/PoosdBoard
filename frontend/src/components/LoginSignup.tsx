@@ -103,6 +103,13 @@ function LoginSignup() {
             .then(async (res) => {
                 const data = await res.json();
 
+                // If backend reports the account exists but needs verification, show the code screen
+                if (data.needsEmailVerification) {
+                    setVerificationEmail(email);
+                    setShowEmailVerification(true);
+                    return;
+                }
+
                 if (data.error && data.error !== 'Signed up' && !data.error.includes('Signed up')) {
                     throw new Error(data.error);
                 }
@@ -119,28 +126,7 @@ function LoginSignup() {
 
     function handleForgotPassword(event: React.MouseEvent<HTMLButtonElement>) {
         event.preventDefault();
-        const emailInput = document.getElementById('resetEmailInput') as HTMLInputElement;
-        const email = emailInput?.value;
-        
-        if(!email) {
-            alert('Please enter your email address');
-            return;
-        }
-
-        fetch('https://poosdboard.com/api/reset-password', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email })
-        })
-            .then(async (res) => {
-                await res.json();
-                alert(`Password reset link sent to ${email}!`);
-                setShowForgotPassword(false);
-            })
-            .catch((err) => {
-                console.error('Password reset error:', err);
-                alert('Failed to send reset link: ' + err.message);
-            });
+        window.location.href = '/forgot-password';
     }
     
     const containerStyle: React.CSSProperties = {
@@ -419,7 +405,10 @@ function LoginSignup() {
 
                             <div
                                 style={forgotPasswordLinkStyle}
-                                onClick={() => setShowForgotPassword(true)}
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    window.location.href = '/forgot-password';
+                                }}
                                 onMouseEnter={(e) => {
                                     (e.currentTarget as HTMLElement).style.color = '#FDB813';
                                     (e.currentTarget as HTMLElement).style.textDecoration = 'underline';
